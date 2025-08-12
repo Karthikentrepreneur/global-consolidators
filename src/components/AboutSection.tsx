@@ -2,9 +2,20 @@
 import { Button } from "@/components/ui/button";
 import { CheckCircle } from "lucide-react";
 import ScrollAnimation from "./ScrollAnimation";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { getCurrentCountryFromPath } from "@/services/countryDetection";
 
 const AboutSection = () => {
+  const location = useLocation();
+  const currentCountry = getCurrentCountryFromPath(location.pathname);
+  
+  const getNavLink = (basePath: string) => {
+    if (currentCountry.code === "SG") return basePath;
+    return `/${currentCountry.name.toLowerCase().replace(" ", "-")}${basePath}`;
+  };
+
+  const isSriLanka = currentCountry.code === "LK";
+
   return (
     <section className="bg-slate-100 py-[114px]">
       <div className="container mx-auto px-4 md:px-6">
@@ -25,17 +36,37 @@ const AboutSection = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-4">
-                <Link to="/about">
+                <Link to={getNavLink("/about-us")}>
                   <Button className="bg-gc-gold hover:bg-gc-bronze text-white rounded-md px-6 py-3">
                     Know More
                   </Button>
                 </Link>
-                <Link to="/contact">
+                <Link to={getNavLink("/contact")}>
                   <Button variant="outline" className="border-gc-gold text-gc-gold hover:bg-gc-gold hover:text-white rounded-md px-6 py-3">
                     Reach Us
                   </Button>
                 </Link>
               </div>
+              
+              {/* Sri Lanka specific images */}
+              {isSriLanka && (
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ScrollAnimation delay={300} className="relative">
+                    <img 
+                      alt="GC Sri Lanka Operations" 
+                      className="rounded-lg shadow-lg w-full object-cover h-48" 
+                      src="/warehousing.png" 
+                    />
+                  </ScrollAnimation>
+                  <ScrollAnimation delay={400} className="relative">
+                    <img 
+                      alt="GC Sri Lanka Services" 
+                      className="rounded-lg shadow-lg w-full object-cover h-48" 
+                      src="/oceanfreight.png" 
+                    />
+                  </ScrollAnimation>
+                </div>
+              )}
             </ScrollAnimation>
           </div>
           <div className="order-1 lg:order-2">

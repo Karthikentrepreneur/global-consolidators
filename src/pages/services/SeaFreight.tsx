@@ -4,11 +4,13 @@ import Footer from "@/components/Footer";
 import { motion } from "framer-motion";
 import { Ship, Container, Anchor } from "lucide-react";
 import { Link } from "react-router-dom";
+import CallToAction from "@/components/CallToAction";
+
 const SeaFreight = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
-  return <div className="bg-white text-black min-h-screen">
+  return <div className="min-h-screen bg-white">
       <Navigation />
 
       <section className="pt-28 pb-16 relative overflow-hidden">
@@ -119,7 +121,10 @@ const SeaFreight = () => {
         </div>
       </section>
 
+      <CallToAction />
+      
       <Footer />
     </div>;
 };
+
 export default SeaFreight;
