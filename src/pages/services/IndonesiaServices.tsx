@@ -25,11 +25,11 @@ const ServiceCard = ({ title, description, icon: Icon, image, link }) => {
       viewport={{ once: true }}
       className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group grid grid-cols-1 md:grid-cols-2"
     >
-      <div className="w-full h-48 md:h-64">
+      <div className="w-full h-48 md:h-64 flex items-center justify-center">
         <img
           src={image}
           alt={title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="h-full w-auto object-contain transition-transform duration-500 group-hover:scale-105"
         />
       </div>
       <div className="p-6 flex flex-col justify-center bg-gray-200">
