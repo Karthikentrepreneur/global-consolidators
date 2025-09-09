@@ -51,7 +51,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
     once: true
   }} className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group grid grid-cols-1 md:grid-cols-2">
       <div className="w-full h-48 md:h-64">
-        <img src={image} alt={title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        <img src={image} alt={title} className="w-full h-full object-cover mx-auto transition-transform duration-500 group-hover:scale-105" />
       </div>
       <div className="p-6 flex flex-col justify-center bg-gradient-to-br from-gc-light-gold/10 to-gc-gold/5 bg-stone-200">
         <div className="bg-blue-200 text-gc-dark-blue p-2 rounded-full inline-block mb-2 w-fit">

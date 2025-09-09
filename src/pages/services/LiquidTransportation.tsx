@@ -41,7 +41,7 @@ const LiquidTransportation = () => {
               className="relative"
             >
               <div className="rounded-2xl overflow-hidden shadow-2xl">
-                <img src="/liquidtransportation.png" alt="Liquid Transportation" className="w-full h-96 object-cover" />
+                <img src="/liquidtransportation.png" alt="Liquid Transportation" className="w-full h-96 object-cover mx-auto" />
                 <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-lg font-bold">
                   7584
                 </div>
