@@ -11,7 +11,24 @@ interface ContactSidebarProps {
   onClose: () => void;
 }
 
-const countries = [{
+interface City {
+  name: string;
+  lat: number;
+  lng: number;
+  address: string;
+  contacts: string[];
+  email?: string;
+}
+
+interface Country {
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
+  cities: City[];
+}
+
+const countries: Country[] = [{
   code: "in",
   name: "India",
   lat: 9.9323,
@@ -301,12 +318,12 @@ const countries = [{
 }];
 
 // Sort countries alphabetically by name
-const sortedCountries = [...countries].sort((a, b) => a.name.localeCompare(b.name));
+const sortedCountries: Country[] = [...countries].sort((a, b) => a.name.localeCompare(b.name));
 
 const ContactSidebar: React.FC<ContactSidebarProps> = ({ isOpen, onClose }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<any | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<City | null>(null);
   const [selectedCityIndexes, setSelectedCityIndexes] = useState<{ [countryName: string]: number }>({});
   const isMobile = useIsMobile();
 
@@ -334,7 +351,7 @@ const ContactSidebar: React.FC<ContactSidebarProps> = ({ isOpen, onClose }) => {
     }
   }, []);
 
-  const navigateToLocation = (lat: number, lng: number, city: any = null) => {
+  const navigateToLocation = (lat: number, lng: number, city: City | null = null) => {
     // Find the iframe in the ContactMapContainer
     const iframe = document.querySelector('iframe[title="Interactive Map"]') as HTMLIFrameElement;
     if (iframe) {
@@ -353,7 +370,7 @@ const ContactSidebar: React.FC<ContactSidebarProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleCitySelection = (country: any, cityIndex: number) => {
+  const handleCitySelection = (country: Country, cityIndex: number) => {
     setSelectedCityIndexes(prev => ({
       ...prev,
       [country.name]: cityIndex
@@ -425,7 +442,7 @@ const ContactSidebar: React.FC<ContactSidebarProps> = ({ isOpen, onClose }) => {
                         <div className="space-y-2">
                           {/* All cities displayed as buttons */}
                           <div className="space-y-2">
-                            {country.cities.map((city: any, index: number) => (
+                            {country.cities.map((city: City, index: number) => (
                               <div key={index} className="w-full">
                                 <Button 
                                   variant="ghost" 
