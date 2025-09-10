@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,37 @@ interface User {
   created_at: string;
 }
 
+// Mock data
+const mockUsers: User[] = [
+  {
+    id: "1",
+    email: "john.doe@example.com",
+    first_name: "John",
+    last_name: "Doe",
+    role: "admin",
+    status: "Active",
+    created_at: "2024-01-15T08:30:00Z"
+  },
+  {
+    id: "2",
+    email: "jane.smith@example.com",
+    first_name: "Jane",
+    last_name: "Smith",
+    role: "user",
+    status: "Active",
+    created_at: "2024-01-20T10:15:00Z"
+  },
+  {
+    id: "3",
+    email: "mike.johnson@example.com",
+    first_name: "Mike",
+    last_name: "Johnson",
+    role: "moderator",
+    status: "Inactive",
+    created_at: "2024-01-25T14:45:00Z"
+  }
+];
+
 const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,42 +83,7 @@ const Users = () => {
     role: "user" as 'admin' | 'user' | 'moderator',
   });
 
-  // Mock data
-  const mockUsers: User[] = [
-    {
-      id: "1",
-      email: "john.doe@example.com",
-      first_name: "John",
-      last_name: "Doe",
-      role: "admin",
-      status: "Active",
-      created_at: "2024-01-15T08:30:00Z"
-    },
-    {
-      id: "2",
-      email: "jane.smith@example.com",
-      first_name: "Jane",
-      last_name: "Smith",
-      role: "user",
-      status: "Active",
-      created_at: "2024-01-20T10:15:00Z"
-    },
-    {
-      id: "3",
-      email: "mike.johnson@example.com",
-      first_name: "Mike",
-      last_name: "Johnson",
-      role: "moderator",
-      status: "Inactive",
-      created_at: "2024-01-25T14:45:00Z"
-    }
-  ];
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       // Simulate API call
@@ -100,7 +96,11 @@ const Users = () => {
       toast.error("Failed to fetch users");
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const handleStatusChange = async (userId: string, newStatus: 'Active' | 'Inactive' | 'Suspended') => {
     try {

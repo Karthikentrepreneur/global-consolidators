@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,6 +87,7 @@ const BlogEditor = () => {
     description: "",
     country: "singapore",
     label: "",
+    folder: "",
     file: null as File | null,
   });
 
@@ -111,20 +112,20 @@ const BlogEditor = () => {
     } else {
       navigate("/admin-login");
     }
-  }, [navigate]);
+  }, [navigate, fetchArticles]);
 
   useEffect(() => {
     if (activeView === "gallery" && isLoggedIn) {
       fetchGalleryImages();
     }
-  }, [activeView, selectedCountry, isLoggedIn]);
+  }, [activeView, selectedCountry, isLoggedIn, fetchGalleryImages]);
 
   const handleLogout = () => {
     localStorage.removeItem("isAdminLoggedIn");
     navigate("/admin-login");
   };
 
-  const fetchArticles = async () => {
+  const fetchArticles = useCallback(async () => {
     setLoading(true);
     try {
       console.log('Fetching articles...');
@@ -139,19 +140,20 @@ const BlogEditor = () => {
       }
       console.log('Articles fetched:', data);
       setArticles(data || []);
-    } catch (error: any) {
-      console.error('Fetch articles error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Fetch articles error:', err);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: err.message,
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  const fetchGalleryImages = async () => {
+  const fetchGalleryImages = useCallback(async () => {
     setLoading(true);
     try {
       console.log('Fetching gallery images for:', selectedCountry);
@@ -167,17 +169,18 @@ const BlogEditor = () => {
       }
       console.log('Gallery images fetched:', data);
       setGalleryImages(data || []);
-    } catch (error: any) {
-      console.error('Fetch gallery images error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Fetch gallery images error:', err);
       toast({
         variant: "destructive",
         title: "Error fetching images",
-        description: error.message,
+        description: err.message,
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCountry, toast]);
 
   const generateSlug = (title: string) => {
     return title
@@ -397,12 +400,13 @@ const BlogEditor = () => {
 
       resetForm();
       fetchArticles();
-    } catch (error: any) {
-      console.error('Submit error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Submit error:', err);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: err.message,
       });
     } finally {
       setLoading(false);
@@ -445,12 +449,13 @@ const BlogEditor = () => {
       });
       
       fetchArticles();
-    } catch (error: any) {
-      console.error('Delete error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Delete error:', err);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: err.message,
       });
     }
   };
@@ -485,7 +490,9 @@ const BlogEditor = () => {
     try {
       const fileExt = galleryUploadForm.file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const filePath = galleryUploadForm.folder
+        ? `${galleryUploadForm.folder}/${fileName}`
+        : `${fileName}`;
 
       console.log(`Uploading to gallery-${galleryUploadForm.country} bucket:`, filePath);
 
@@ -525,16 +532,17 @@ const BlogEditor = () => {
         description: "The image has been added to the gallery",
       });
 
-      setGalleryUploadForm({ title: "", description: "", country: "singapore", label: "", file: null });
+      setGalleryUploadForm({ title: "", description: "", country: "singapore", label: "", folder: "", file: null });
       if (galleryUploadForm.country === selectedCountry) {
         fetchGalleryImages();
       }
-    } catch (error: any) {
-      console.error('Gallery upload error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Gallery upload error:', err);
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: error.message,
+        description: err.message,
       });
     } finally {
       setUploadLoading(false);
@@ -573,11 +581,12 @@ const BlogEditor = () => {
 
       setEditingImage(null);
       fetchGalleryImages();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Update failed",
-        description: error.message,
+        description: err.message,
       });
     }
   };
@@ -609,11 +618,12 @@ const BlogEditor = () => {
       });
 
       fetchGalleryImages();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Delete failed",
-        description: error.message,
+        description: err.message,
       });
     }
   };
@@ -635,11 +645,12 @@ const BlogEditor = () => {
       });
 
       fetchGalleryImages();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Update failed",
-        description: error.message,
+        description: err.message,
       });
     }
   };
@@ -1058,7 +1069,16 @@ const BlogEditor = () => {
                 placeholder="e.g., private (to hide from public)"
               />
             </div>
-            
+
+            <div>
+              <Label>Folder (Optional)</Label>
+              <Input
+                value={galleryUploadForm.folder}
+                onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, folder: e.target.value })}
+                placeholder="Enter folder name"
+              />
+            </div>
+
             <div>
               <Label>Image File *</Label>
               <Input

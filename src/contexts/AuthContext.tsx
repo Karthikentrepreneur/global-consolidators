@@ -1,15 +1,26 @@
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback
+} from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
+interface UserProfile {
+  id: string;
+  role: string;
+}
+
 // Define the shape of our context
 type AuthContextType = {
   user: User | null;
   session: Session | null;
-  profile: any | null;
+  profile: UserProfile | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
@@ -38,7 +49,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -48,14 +59,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isStaff = profile?.role === 'staff';
 
   // Fetch user profile - simplified since we don't have profiles table yet
-  const fetchProfile = async (userId: string) => {
-    try {
-      // For now, we'll just set a basic profile
-      setProfile({ id: userId, role: user?.email === 'admin@oecl.sg' ? 'admin' : 'user' });
-    } catch (error: any) {
-      console.error('Error fetching profile:', error.message);
-    }
-  };
+  const fetchProfile = useCallback(
+    async (userId: string) => {
+      try {
+        setProfile({ id: userId, role: user?.email === 'admin@oecl.sg' ? 'admin' : 'user' });
+      } catch (error: unknown) {
+        const err = error as Error;
+        console.error('Error fetching profile:', err.message);
+      }
+    },
+    [user?.email]
+  );
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -87,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchProfile]);
 
   // Sign in with email and password
   const signIn = async (email: string, password: string) => {
@@ -103,13 +117,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: "Login successful",
         description: "Welcome back!",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: error.message,
+        description: err.message,
       });
-      throw error;
+      throw err;
     }
   };
 
@@ -134,13 +149,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         description: "Welcome to OECL!",
       });
       navigate('/dashboard');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Registration failed",
-        description: error.message,
+        description: err.message,
       });
-      throw error;
+      throw err;
     }
   };
 
@@ -152,11 +168,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toast({
         title: "Logged out successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       toast({
         variant: "destructive",
         title: "Error signing out",
-        description: error.message,
+        description: err.message,
       });
     }
   };

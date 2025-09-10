@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,7 +56,7 @@ const ContactForm = () => {
   const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]);
   const [showSuccess, setShowSuccess] = useState(false);
   const formRef = useRef(null);
-  const getCurrentCountry = () => {
+  const getCurrentCountry = useCallback(() => {
     const path = location.pathname.toLowerCase();
     if (path.includes("/singapore")) return "Singapore";
     if (path.includes("/sri-lanka")) return "Sri Lanka";
@@ -64,10 +64,10 @@ const ContactForm = () => {
     if (path.includes("/bangladesh")) return "Bangladesh";
     if (path.includes("/pakistan")) return "Pakistan";
     return "Singapore";
-  };
+  }, [location.pathname]);
   useEffect(() => {
     setSelectedLocation(getCurrentCountry());
-  }, [location.pathname]);
+  }, [getCurrentCountry]);
   const currentOffices = allOffices[selectedLocation] || [];
   const handleSubmit = async e => {
     e.preventDefault();
