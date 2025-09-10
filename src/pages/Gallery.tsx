@@ -14,13 +14,16 @@ interface GalleryImage {
   image_url: string;
   image_path: string;
   created_at: string;
-  folder: string | null; // 👈 NEW
-  country?: string;      // (not strictly required here, but handy)
+  folder: string | null; // NEW in DB
+  country?: string | null;
+  label?: string | null;
 }
 
 const Gallery = () => {
-  const { country, "*": splat } = useParams<{ country?: string; "*": string }>();
-  // splat captures the trailing path (e.g., "f/Events")
+  // Capture :country and any trailing segments (splat) like "f/Events"
+  const params = useParams<{ country?: string; "*": string }>();
+  const { country } = params;
+  const splat = params["*"];
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -28,29 +31,34 @@ const Gallery = () => {
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-
   const { toast } = useToast();
 
-  // URL helpers
+  // ---------- URL helpers ----------
   const parseFolderFromUrl = useCallback(() => {
-    // We support routes like:
-    // /gallery/:country/f/:folder
-    // /gallery/f/:folder (no country)
-    // Decode folder slug back to name
-    // Example splat = "f/Events" or "f/My%20Album"
-    if (!splat) return null;
-    const parts = splat.split("/").filter(Boolean);
-    if (parts[0] === "f" && parts[1]) {
+    // Prefer splat (React Router v6)
+    if (splat) {
+      const parts = splat.split("/").filter(Boolean); // e.g. ["f", "Events"]
+      if (parts[0] === "f" && parts[1]) {
+        try {
+          return decodeURIComponent(parts[1]);
+        } catch {
+          return parts[1];
+        }
+      }
+    }
+    // Fallback: regex from pathname (if route not configured with splat)
+    const match = location.pathname.match(/\/f\/([^/]+)/i);
+    if (match?.[1]) {
       try {
-        return decodeURIComponent(parts[1]);
+        return decodeURIComponent(match[1]);
       } catch {
-        return parts[1];
+        return match[1];
       }
     }
     return null;
-  }, [splat]);
+  }, [splat, location.pathname]);
 
-  // Extract current country from path or param
+  // Extract current country from path or param (defaults to Singapore)
   const getCurrentCountry = () => {
     const path = location.pathname.toLowerCase();
 
@@ -86,31 +94,29 @@ const Gallery = () => {
     srilanka: "🇱🇰",
   };
 
-  // Group by folder (prefer `folder` column; fallback to image_path prefix)
+  // ---------- Grouping ----------
+  // Prefer the new "folder" column. If null, fall back to first segment of image_path.
   const groupedImages = useMemo(() => {
     const groups: Record<string, GalleryImage[]> = {};
     images.forEach((img) => {
-      const byFolder = img.folder?.trim();
-      let key: string;
-      if (byFolder) {
-        key = byFolder;
-      } else if (img.image_path?.includes("/")) {
-        key = img.image_path.split("/")[0] || "Uncategorized";
-      } else {
-        key = "Uncategorized";
-      }
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(img);
+      const folder = (img.folder && img.folder.trim())
+        ? img.folder.trim()
+        : (img.image_path?.includes("/") ? (img.image_path.split("/")[0] || "Uncategorized") : "Uncategorized");
+
+      if (!groups[folder]) groups[folder] = [];
+      groups[folder].push(img);
     });
     return groups;
   }, [images]);
 
+  // ---------- Data fetch ----------
   const fetchGalleryImages = useCallback(async () => {
     setLoading(true);
     try {
+      // fetch all public images for current country (exclude label='private')
       const { data, error } = await supabase
         .from("gallery")
-        .select("id, title, description, image_url, image_path, created_at, folder")
+        .select("id, title, description, image_url, image_path, created_at, folder, country, label")
         .eq("country", currentCountry)
         .or("label.is.null,label.neq.private")
         .order("created_at", { ascending: false });
@@ -128,7 +134,7 @@ const Gallery = () => {
     }
   }, [currentCountry, toast]);
 
-  // Sync selected folder from URL
+  // Keep selected folder in sync with URL
   useEffect(() => {
     setSelectedFolder(parseFolderFromUrl());
   }, [parseFolderFromUrl]);
@@ -137,20 +143,17 @@ const Gallery = () => {
     fetchGalleryImages();
   }, [fetchGalleryImages]);
 
-  // Handlers for folder navigation
+  // ---------- Navigation ----------
   const openFolder = (folderName: string) => {
     setSelectedFolder(folderName);
     const encoded = encodeURIComponent(folderName);
-    // Build path preserving country segment if present
-    const base =
-      currentCountry ? `/gallery/${currentCountry}` : "/gallery";
+    const base = currentCountry ? `/gallery/${currentCountry}` : "/gallery";
     navigate(`${base}/f/${encoded}`, { replace: false });
   };
 
   const backToFolders = () => {
     setSelectedFolder(null);
-    const base =
-      currentCountry ? `/gallery/${currentCountry}` : "/gallery";
+    const base = currentCountry ? `/gallery/${currentCountry}` : "/gallery";
     navigate(base, { replace: false });
   };
 
@@ -169,8 +172,7 @@ const Gallery = () => {
               </h1>
             </div>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Explore images from our operations and projects in{" "}
-              {countryNames[currentCountry]} by folders.
+              Browse our operations and projects by folders.
             </p>
           </div>
 
@@ -187,8 +189,7 @@ const Gallery = () => {
               <ImageIcon className="h-24 w-24 mx-auto mb-6 text-gray-300" />
               <h3 className="text-xl font-medium text-gray-900 mb-2">No Images Yet</h3>
               <p className="text-gray-600">
-                Upload images to see them here. You can group them using the optional
-                <span className="font-medium"> folder</span> field.
+                Upload images from the admin panel. Use the optional <b>folder</b> field to group them.
               </p>
             </div>
           )}
@@ -196,7 +197,7 @@ const Gallery = () => {
           {/* Folders grid OR selected folder grid */}
           {!loading && images.length > 0 && (
             selectedFolder === null ? (
-              // Folder list
+              // FOLDER LIST
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {Object.entries(groupedImages).map(([folder, folderImages], index) => (
                   <motion.div
@@ -228,7 +229,7 @@ const Gallery = () => {
                 ))}
               </div>
             ) : (
-              // Images inside selected folder
+              // IMAGES INSIDE SELECTED FOLDER
               <>
                 <button
                   onClick={backToFolders}
@@ -236,9 +237,7 @@ const Gallery = () => {
                 >
                   ← Back to folders
                 </button>
-                <h2 className="text-2xl font-bold mb-4">
-                  {selectedFolder}
-                </h2>
+                <h2 className="text-2xl font-bold mb-4">{selectedFolder}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {(groupedImages[selectedFolder] || []).map((image, index) => (
                     <motion.div
