@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
+  // Allows to automatically instanciate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
@@ -100,7 +100,6 @@ export type Database = {
           country: string
           created_at: string
           description: string | null
-          folder_name: string | null
           id: string
           image_path: string
           image_url: string
@@ -112,7 +111,6 @@ export type Database = {
           country: string
           created_at?: string
           description?: string | null
-          folder_name?: string | null
           id?: string
           image_path: string
           image_url: string
@@ -124,45 +122,11 @@ export type Database = {
           country?: string
           created_at?: string
           description?: string | null
-          folder_name?: string | null
           id?: string
           image_path?: string
           image_url?: string
           label?: string | null
           title?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      gallery_folders: {
-        Row: {
-          country: string
-          cover_image_url: string | null
-          created_at: string
-          description: string | null
-          display_name: string
-          id: string
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          country: string
-          cover_image_url?: string | null
-          created_at?: string
-          description?: string | null
-          display_name: string
-          id?: string
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          country?: string
-          cover_image_url?: string | null
-          created_at?: string
-          description?: string | null
-          display_name?: string
-          id?: string
-          name?: string
           updated_at?: string
         }
         Relationships: []
