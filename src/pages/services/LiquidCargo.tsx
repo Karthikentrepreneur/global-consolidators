@@ -47,7 +47,7 @@ const LiquidCargo = () => {
             delay: 0.2
           }} className="relative">
               <div className="rounded-2xl overflow-hidden shadow-2xl">
-                <img src="/liquidtransportation.png" alt="Liquid Cargo Transportation" className="w-full h-96 object-cover" />
+                <img src="/liquidtransportation.png" alt="Liquid Cargo Transportation" className="w-full h-96 object-cover mx-auto" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
               </div>
             </motion.div>
