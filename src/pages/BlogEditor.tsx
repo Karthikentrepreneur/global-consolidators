@@ -61,24 +61,23 @@ type GalleryUploadForm = {
   description: string;
   country: string;
   label: string;
-  folder: string;   // NEW
-  files: File[];    // NEW (use this for single/multiple)
+  folder: string;   // used to group photos
+  files: File[];    // supports multi-select
 };
 
 function slugifyFolder(input: string): string {
-  // Trim slashes and sanitize path parts; allow nested folders via "/"
+  // Trim slashes; allow nested folders but sanitize each part
   let s = input.trim().replace(/^\/+|\/+$/g, "");
-  s = s
+  return s
     .split("/")
     .map(part =>
       part
         .toLowerCase()
-        .replace(/[^a-z0-9-_]+/g, "-") // spaces & special → hyphen
+        .replace(/[^a-z0-9-_]+/g, "-")
         .replace(/^-+|-+$/g, "")
     )
     .filter(Boolean)
     .join("/");
-  return s;
 }
 
 const BlogEditor = () => {
@@ -111,7 +110,7 @@ const BlogEditor = () => {
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
 
-  // Gallery upload form
+  // Gallery upload form (supports multiple files + folder)
   const [galleryUploadForm, setGalleryUploadForm] = useState<GalleryUploadForm>({
     title: "",
     description: "",
@@ -239,7 +238,7 @@ const BlogEditor = () => {
   };
 
   const handleBold = () => insertTextAtCursor('**', '**');
-  const handleItalic = () => insertTextAtCursor('*', '*');
+  ��const handleItalic = () => insertTextAtCursor('*', '*');
   const handleUnderline = () => insertTextAtCursor('<u>', '</u>');
   const handleBulletList = () => insertTextAtCursor('\n- ');
   const handleNumberedList = () => insertTextAtCursor('\n1. ');
@@ -411,12 +410,12 @@ const BlogEditor = () => {
       toast({
         variant: "destructive",
         title: "Missing required fields",
-        description: "Please provide title and at least one image file",
+        description: "Please provide a title and pick at least one image.",
       });
       return;
     }
 
-    // Only require a folder when uploading multiple images
+    // Require folder name when uploading multiple
     let folderSafe = galleryUploadForm.folder ? slugifyFolder(galleryUploadForm.folder) : "";
     if (hasMultiple && !folderSafe) {
       toast({
@@ -430,46 +429,47 @@ const BlogEditor = () => {
     setUploadLoading(true);
     try {
       const bucket = `gallery-${galleryUploadForm.country}`;
-      // Upload each file and insert a DB row
+
       for (const file of files) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+        const ext = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         const filePath = folderSafe ? `${folderSafe}/${fileName}` : `${fileName}`;
 
-        const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file);
-        if (uploadError) throw new Error(uploadError.message);
+        // Upload to Storage
+        const { error: upErr } = await supabase.storage.from(bucket).upload(filePath, file);
+        if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
 
+        // Get public URL
         const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(filePath);
 
-        const { error: dbError } = await supabase
-          .from("gallery")
-          .insert({
-            country: galleryUploadForm.country,
-            title: galleryUploadForm.title,
-            description: galleryUploadForm.description || null,
-            label: galleryUploadForm.label || null,
-            image_url: publicUrl,
-            image_path: filePath,
-            folder: folderSafe || null,
-          });
+        // Insert DB row with SAME folder for all selected files
+        const { error: dbErr } = await supabase.from("gallery").insert({
+          country: galleryUploadForm.country,
+          title: galleryUploadForm.title,
+          description: galleryUploadForm.description || null,
+          label: galleryUploadForm.label || null,
+          image_url: publicUrl,
+          image_path: filePath,
+          folder: folderSafe || null,
+        });
+        if (dbErr) throw new Error(`DB insert failed: ${dbErr.message}`);
 
-        if (dbError) throw new Error(dbError.message);
-
-        await new Promise((r) => setTimeout(r, 15)); // small spacing for ordering
+        // tiny delay to keep created_at ordering consistent
+        await new Promise(r => setTimeout(r, 12));
       }
 
       toast({
         title: "Upload complete",
         description: hasMultiple
-          ? `${files.length} images uploaded to "${folderSafe}".`
-          : "Image uploaded successfully.",
+          ? `${files.length} photos uploaded to "${folderSafe}".`
+          : "Photo uploaded.",
       });
 
-      // Reset form
+      // Reset form (keep country)
       setGalleryUploadForm({
         title: "",
         description: "",
-        country: "singapore",
+        country: galleryUploadForm.country,
         label: "",
         folder: "",
         files: [],
@@ -478,8 +478,8 @@ const BlogEditor = () => {
       if (galleryUploadForm.country === selectedCountry) {
         fetchGalleryImages();
       }
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Upload failed", description: error.message || "Unknown error" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Upload failed", description: err.message || "Unknown error" });
     } finally {
       setUploadLoading(false);
     }
@@ -528,7 +528,6 @@ const BlogEditor = () => {
         .remove([image.image_path]);
 
       if (storageError) {
-        // continue to DB delete; log for your reference
         console.error('Storage delete error:', storageError);
       }
 
@@ -817,16 +816,16 @@ const BlogEditor = () => {
               />
             </div>
 
-            {/* FOLDER FIELD */}
+            {/* Folder that groups all selected files */}
             <div>
-              <Label>Folder (Optional, REQUIRED if uploading multiple)</Label>
+              <Label>Folder (Required if uploading multiple)</Label>
               <Input
                 value={galleryUploadForm.folder}
                 onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, folder: e.target.value })}
                 placeholder="e.g., events, csr, operations/jan"
               />
               <p className="text-xs text-gray-500 mt-1">
-                We’ll sanitize this for storage (no spaces/special characters).
+                All selected photos will be saved to this folder.
               </p>
             </div>
 
@@ -849,9 +848,6 @@ const BlogEditor = () => {
                   Selected: {galleryUploadForm.files.length} file{galleryUploadForm.files.length > 1 ? "s" : ""}
                 </p>
               )}
-              <p className="text-xs text-gray-500">
-                If you select more than one file, the Folder field above is required.
-              </p>
             </div>
 
             <Button type="submit" disabled={uploadLoading} className="w-full">
