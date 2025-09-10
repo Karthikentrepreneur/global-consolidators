@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import Navigation from "@/components/Navigation";
@@ -13,6 +13,7 @@ interface GalleryImage {
   title: string;
   description: string | null;
   image_url: string;
+  image_path: string;
   created_at: string;
 }
 
@@ -22,6 +23,7 @@ const Gallery = () => {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Extract country from URL path
@@ -64,18 +66,26 @@ const Gallery = () => {
     srilanka: "🇱🇰"
   };
 
-  useEffect(() => {
-    fetchGalleryImages();
-  }, [currentCountry]);
+  const groupedImages = useMemo(() => {
+    const groups: Record<string, GalleryImage[]> = {};
+    images.forEach((img) => {
+      const folder = img.image_path.includes('/')
+        ? img.image_path.split('/')[0]
+        : 'Uncategorized';
+      if (!groups[folder]) groups[folder] = [];
+      groups[folder].push(img);
+    });
+    return groups;
+  }, [images]);
 
-  const fetchGalleryImages = async () => {
+  const fetchGalleryImages = useCallback(async () => {
     setLoading(true);
     try {
       console.log('Fetching images for country:', currentCountry);
       
       const { data, error } = await supabase
         .from('gallery')
-        .select('id, title, description, image_url, created_at')
+        .select('id, title, description, image_url, image_path, created_at')
         .eq('country', currentCountry)
         .or('label.is.null,label.neq.private')
         .order('created_at', { ascending: false });
@@ -88,17 +98,22 @@ const Gallery = () => {
       console.log('Raw data from Supabase:', data);
       console.log('Number of images found:', data?.length || 0);
       setImages(data || []);
-    } catch (error: any) {
-      console.error('Gallery fetch error:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.error('Gallery fetch error:', err);
       toast({
         variant: "destructive",
         title: "Error loading gallery",
-        description: error.message
+        description: err.message
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentCountry, toast]);
+
+  useEffect(() => {
+    fetchGalleryImages();
+  }, [fetchGalleryImages]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -137,48 +152,89 @@ const Gallery = () => {
             </div>
           )}
 
-          {/* Gallery Grid */}
+          {/* Gallery Grid or Folders */}
           {!loading && images.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {images.map((image, index) => (
-                <motion.div
-                  key={image.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
-                  onClick={() => setSelectedImage(image)}
-                >
-                  <div className="aspect-square overflow-hidden">
-                    <motion.img
-                      src={image.image_url}
-                      alt={image.title}
-                      className="w-full h-full object-cover"
-                      whileHover={{ scale: 1.05 }}
-                      transition={{ duration: 0.3 }}
-                      onError={(e) => {
-                        console.error('Image load error:', e);
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1">
-                      {image.title}
-                    </h3>
-                    {image.description && (
-                      <p className="text-sm text-gray-600 line-clamp-2">
-                        {image.description}
-                      </p>
-                    )}
-                    <div className="text-xs text-gray-400 mt-3">
-                      {new Date(image.created_at).toLocaleDateString()}
+            selectedFolder === null ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {Object.entries(groupedImages).map(([folder, folderImages], index) => (
+                  <motion.div
+                    key={folder}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                    className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
+                    onClick={() => setSelectedFolder(folder)}
+                  >
+                    <div className="aspect-square overflow-hidden">
+                      <motion.img
+                        src={folderImages[0].image_url}
+                        alt={folder}
+                        className="w-full h-full object-cover"
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ duration: 0.3 }}
+                      />
                     </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                    <div className="p-4">
+                      <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1">
+                        {folder}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        {folderImages.length} image{folderImages.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setSelectedFolder(null)}
+                  className="mb-6 text-blue-600 hover:underline"
+                >
+                  ← Back to folders
+                </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {groupedImages[selectedFolder]?.map((image, index) => (
+                    <motion.div
+                      key={image.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                      className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
+                      onClick={() => setSelectedImage(image)}
+                    >
+                      <div className="aspect-square overflow-hidden">
+                        <motion.img
+                          src={image.image_url}
+                          alt={image.title}
+                          className="w-full h-full object-cover"
+                          whileHover={{ scale: 1.05 }}
+                          transition={{ duration: 0.3 }}
+                          onError={(e) => {
+                            console.error('Image load error:', e);
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1">
+                          {image.title}
+                        </h3>
+                        {image.description && (
+                          <p className="text-sm text-gray-600 line-clamp-2">
+                            {image.description}
+                          </p>
+                        )}
+                        <div className="text-xs text-gray-400 mt-3">
+                          {new Date(image.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </>
+            )
           )}
         </div>
       </div>

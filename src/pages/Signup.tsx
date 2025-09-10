@@ -41,8 +41,9 @@ const Signup = () => {
     
     try {
       await signUp(email, password, firstName, lastName);
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      const err = error as Error;
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }

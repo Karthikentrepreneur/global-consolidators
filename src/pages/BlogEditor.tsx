@@ -87,6 +87,7 @@ const BlogEditor = () => {
     description: "",
     country: "singapore",
     label: "",
+    folder: "",
     file: null as File | null,
   });
 
@@ -485,7 +486,9 @@ const BlogEditor = () => {
     try {
       const fileExt = galleryUploadForm.file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const filePath = galleryUploadForm.folder
+        ? `${galleryUploadForm.folder}/${fileName}`
+        : `${fileName}`;
 
       console.log(`Uploading to gallery-${galleryUploadForm.country} bucket:`, filePath);
 
@@ -525,7 +528,7 @@ const BlogEditor = () => {
         description: "The image has been added to the gallery",
       });
 
-      setGalleryUploadForm({ title: "", description: "", country: "singapore", label: "", file: null });
+      setGalleryUploadForm({ title: "", description: "", country: "singapore", label: "", folder: "", file: null });
       if (galleryUploadForm.country === selectedCountry) {
         fetchGalleryImages();
       }
@@ -1058,7 +1061,16 @@ const BlogEditor = () => {
                 placeholder="e.g., private (to hide from public)"
               />
             </div>
-            
+
+            <div>
+              <Label>Folder (Optional)</Label>
+              <Input
+                value={galleryUploadForm.folder}
+                onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, folder: e.target.value })}
+                placeholder="Enter folder name"
+              />
+            </div>
+
             <div>
               <Label>Image File *</Label>
               <Input
