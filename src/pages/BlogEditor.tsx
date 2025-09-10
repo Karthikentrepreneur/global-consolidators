@@ -9,7 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, Trash2, Upload, FileText, Edit, X, Bold, Link as LinkIcon, Italic, Underline, List, Image as ImageIcon } from "lucide-react";
+import {
+  LogOut, Trash2, Upload, FileText, Edit, X,
+  Bold, Link as LinkIcon, Italic, Underline, List,
+  Image as ImageIcon
+} from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 
@@ -37,7 +41,7 @@ interface GalleryImage {
   label: string | null;
   image_url: string;
   image_path: string;
-  folder: string | null; // 👈 NEW
+  folder: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,9 +62,24 @@ type GalleryUploadForm = {
   country: string;
   label: string;
   folder: string;
-  file: File | null;   // kept for backward compatibility (single file)
-  files?: File[];      // NEW: multiple files
+  files: File[];      // ⭐ always use this; no mixed states
 };
+
+function slugifyFolder(input: string): string {
+  // Remove leading/trailing slashes and collapse inner slashes
+  let s = input.trim().replace(/^\/+|\/+$/g, "");
+  // Replace disallowed chars with hyphens; keep inner "/" if user wants subfolders
+  s = s
+    .split("/")
+    .map(part => part
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+    )
+    .filter(Boolean)
+    .join("/");
+  return s;
+}
 
 const BlogEditor = () => {
   const navigate = useNavigate();
@@ -99,7 +118,6 @@ const BlogEditor = () => {
     country: "singapore",
     label: "",
     folder: "",
-    file: null,
     files: [],
   });
 
@@ -149,11 +167,7 @@ const BlogEditor = () => {
       if (error) throw error;
       setArticles(data || []);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -171,11 +185,7 @@ const BlogEditor = () => {
       if (error) throw error;
       setGalleryImages(data || []);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error fetching images",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Error fetching images", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -262,11 +272,7 @@ const BlogEditor = () => {
 
   const insertLink = () => {
     if (!linkUrl) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter a URL",
-      });
+      toast({ variant: "destructive", title: "Error", description: "Please enter a URL" });
       return;
     }
     const displayText = linkText || linkUrl;
@@ -309,11 +315,7 @@ const BlogEditor = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !content || !excerpt || !slug) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please fill in all required fields",
-      });
+      toast({ variant: "destructive", title: "Error", description: "Please fill in all required fields" });
       return;
     }
 
@@ -357,11 +359,7 @@ const BlogEditor = () => {
       resetForm();
       fetchArticles();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -377,16 +375,11 @@ const BlogEditor = () => {
     setAltText(article.alt_text || '');
     setTags(article.tags || []);
     setEditingId(article.id);
-    if (article.featured_image) {
-      setImagePreview(article.featured_image);
-    } else {
-      setImagePreview(null);
-    }
+    setImagePreview(article.featured_image || null);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this article?')) return;
-
     try {
       const { error } = await supabase
         .from('articles')
@@ -397,11 +390,7 @@ const BlogEditor = () => {
       toast({ title: "Success", description: "Article deleted successfully" });
       fetchArticles();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
@@ -420,14 +409,13 @@ const BlogEditor = () => {
     setEditingId(null);
   };
 
-  // ========= GALLERY: MULTI-UPLOAD WITH FOLDER SUPPORT =========
+  // ========= GALLERY: MULTI-UPLOAD WITH FOLDER SUPPORT (FIXED) =========
 
   const handleGalleryFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const files: File[] = galleryUploadForm.files && galleryUploadForm.files.length
-      ? galleryUploadForm.files
-      : (galleryUploadForm.file ? [galleryUploadForm.file] : []);
+    const files = galleryUploadForm.files;
+    const hasMultiple = files.length > 1;
 
     if (files.length === 0 || !galleryUploadForm.title) {
       toast({
@@ -438,7 +426,8 @@ const BlogEditor = () => {
       return;
     }
 
-    if (files.length > 1 && !galleryUploadForm.folder) {
+    let folderSafe = galleryUploadForm.folder ? slugifyFolder(galleryUploadForm.folder) : "";
+    if (hasMultiple && !folderSafe) {
       toast({
         variant: "destructive",
         title: "Folder required",
@@ -451,18 +440,25 @@ const BlogEditor = () => {
     try {
       const bucket = `gallery-${galleryUploadForm.country}`;
 
+      console.log("[UPLOAD] Bucket:", bucket);
+      console.log("[UPLOAD] Files:", files.map(f => f.name));
+      console.log("[UPLOAD] Folder (raw):", galleryUploadForm.folder, "→ (safe):", folderSafe);
+
       for (const file of files) {
         const fileExt = file.name.split(".").pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
-        const filePath = galleryUploadForm.folder
-          ? `${galleryUploadForm.folder}/${fileName}`
-          : `${fileName}`;
+        const filePath = folderSafe ? `${folderSafe}/${fileName}` : `${fileName}`;
+
+        console.log("[UPLOAD] ->", filePath);
 
         const { error: uploadError } = await supabase.storage
           .from(bucket)
           .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error("[UPLOAD ERROR]", uploadError);
+          throw new Error(`Storage upload failed: ${uploadError.message}`);
+        }
 
         const { data: { publicUrl } } = supabase.storage
           .from(bucket)
@@ -477,20 +473,23 @@ const BlogEditor = () => {
             label: galleryUploadForm.label || null,
             image_url: publicUrl,
             image_path: filePath,
-            folder: galleryUploadForm.folder || null, // 👈 store folder
+            folder: folderSafe || null,
           });
 
-        if (dbError) throw dbError;
+        if (dbError) {
+          console.error("[DB INSERT ERROR]", dbError);
+          throw new Error(`DB insert failed: ${dbError.message}`);
+        }
 
-        // slight delay to avoid identical timestamps if needed
-        await new Promise((r) => setTimeout(r, 10));
+        // small delay to keep ordering deterministic
+        await new Promise((r) => setTimeout(r, 15));
       }
 
       toast({
         title: "Upload complete",
         description:
-          files.length > 1
-            ? `${files.length} images uploaded to "${galleryUploadForm.folder}".`
+          hasMultiple
+            ? `${files.length} images uploaded to "${folderSafe}".`
             : "Image uploaded successfully.",
       });
 
@@ -501,7 +500,6 @@ const BlogEditor = () => {
         country: "singapore",
         label: "",
         folder: "",
-        file: null,
         files: [],
       });
 
@@ -512,7 +510,7 @@ const BlogEditor = () => {
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: error.message,
+        description: error.message || "Unknown error",
       });
     } finally {
       setUploadLoading(false);
@@ -544,19 +542,12 @@ const BlogEditor = () => {
 
       if (error) throw error;
 
-      toast({
-        title: "Image updated successfully",
-        description: "The image details have been updated",
-      });
+      toast({ title: "Image updated successfully", description: "The image details have been updated" });
 
       setEditingImage(null);
       fetchGalleryImages();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Update failed",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Update failed", description: error.message });
     }
   };
 
@@ -564,17 +555,14 @@ const BlogEditor = () => {
     if (!confirm('Are you sure you want to delete this image?')) return;
 
     try {
-      // Delete from storage
       const { error: storageError } = await supabase.storage
         .from(`gallery-${image.country}`)
         .remove([image.image_path]);
 
       if (storageError) {
-        // log but continue to delete DB row
         console.error('Storage delete error:', storageError);
       }
 
-      // Delete from database
       const { error: dbError } = await supabase
         .from('gallery')
         .delete()
@@ -582,18 +570,11 @@ const BlogEditor = () => {
 
       if (dbError) throw dbError;
 
-      toast({
-        title: "Image deleted successfully",
-        description: "The image has been removed from the gallery",
-      });
+      toast({ title: "Image deleted successfully", description: "The image has been removed from the gallery" });
 
       fetchGalleryImages();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Delete failed",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Delete failed", description: error.message });
     }
   };
 
@@ -614,11 +595,7 @@ const BlogEditor = () => {
 
       fetchGalleryImages();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Update failed",
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Update failed", description: error.message });
     }
   };
 
@@ -970,12 +947,15 @@ const BlogEditor = () => {
             </div>
 
             <div>
-              <Label>Folder (Optional, REQUIRED when uploading multiple files)</Label>
+              <Label>Folder (Optional, REQUIRED if uploading multiple)</Label>
               <Input
                 value={galleryUploadForm.folder}
                 onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, folder: e.target.value })}
-                placeholder="Enter folder name (e.g., Events, CSR, Operations/Jan)"
+                placeholder="e.g., events, csr, operations/jan"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                We’ll automatically clean this into a safe path (no spaces/special characters).
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -987,14 +967,18 @@ const BlogEditor = () => {
                 onChange={(e) =>
                   setGalleryUploadForm({
                     ...galleryUploadForm,
-                    file: null, // prefer the multi-files flow
                     files: e.target.files ? Array.from(e.target.files) : [],
                   })
                 }
                 required
               />
+              {galleryUploadForm.files.length > 0 && (
+                <p className="text-xs text-gray-600">
+                  Selected: {galleryUploadForm.files.length} file{galleryUploadForm.files.length > 1 ? "s" : ""}
+                </p>
+              )}
               <p className="text-xs text-gray-500">
-                You can select multiple images. If you pick more than one, please set a folder name above.
+                If you select more than one file, the Folder field is required.
               </p>
             </div>
 
@@ -1131,13 +1115,12 @@ const BlogEditor = () => {
     </div>
   );
 
-  if (!isLoggedIn) return null; // Will redirect to login
+  if (!isLoggedIn) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
 
-      {/* Add padding top to account for fixed navigation */}
       <div className="pt-32">
         <div className="bg-white shadow-sm border-b">
           <div className="container mx-auto px-4 py-4">
