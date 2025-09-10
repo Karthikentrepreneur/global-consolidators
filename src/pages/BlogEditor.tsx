@@ -61,20 +61,20 @@ type GalleryUploadForm = {
   description: string;
   country: string;
   label: string;
-  folder: string;
-  files: File[];      // ⭐ always use this; no mixed states
+  folder: string;   // NEW
+  files: File[];    // NEW (use this for single/multiple)
 };
 
 function slugifyFolder(input: string): string {
-  // Remove leading/trailing slashes and collapse inner slashes
+  // Trim slashes and sanitize path parts; allow nested folders via "/"
   let s = input.trim().replace(/^\/+|\/+$/g, "");
-  // Replace disallowed chars with hyphens; keep inner "/" if user wants subfolders
   s = s
     .split("/")
-    .map(part => part
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+    .map(part =>
+      part
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, "-") // spaces & special → hyphen
+        .replace(/^-+|-+$/g, "")
     )
     .filter(Boolean)
     .join("/");
@@ -92,7 +92,7 @@ const BlogEditor = () => {
   const [loading, setLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
 
-  // Blog form state
+  // Blog form
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [excerpt, setExcerpt] = useState('');
@@ -111,7 +111,7 @@ const BlogEditor = () => {
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
 
-  // Gallery upload form state
+  // Gallery upload form
   const [galleryUploadForm, setGalleryUploadForm] = useState<GalleryUploadForm>({
     title: "",
     description: "",
@@ -121,18 +121,19 @@ const BlogEditor = () => {
     files: [],
   });
 
-  // Gallery edit form state
+  // Gallery edit modal
   const [galleryEditForm, setGalleryEditForm] = useState({
     title: "",
     description: "",
     label: "",
   });
 
-  // Link dialog state
+  // Link dialog
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
 
+  // ---------- Auth / initial ----------
   useEffect(() => {
     const adminStatus = localStorage.getItem("isAdminLoggedIn");
     if (adminStatus === "true") {
@@ -156,6 +157,7 @@ const BlogEditor = () => {
     navigate("/admin-login");
   };
 
+  // ---------- Articles ----------
   const fetchArticles = async () => {
     setLoading(true);
     try {
@@ -168,24 +170,6 @@ const BlogEditor = () => {
       setArticles(data || []);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchGalleryImages = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('gallery')
-        .select('id, country, title, description, label, image_url, image_path, folder, created_at, updated_at')
-        .eq('country', selectedCountry)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setGalleryImages(data || []);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error fetching images", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -340,19 +324,12 @@ const BlogEditor = () => {
       };
 
       if (editingId) {
-        const { error } = await supabase
-          .from('articles')
-          .update(articleData)
-          .eq('id', editingId);
+        const { error } = await supabase.from('articles').update(articleData).eq('id', editingId);
         if (error) throw error;
-
         toast({ title: "Success", description: "Article updated successfully" });
       } else {
-        const { error } = await supabase
-          .from('articles')
-          .insert([articleData]);
+        const { error } = await supabase.from('articles').insert([articleData]);
         if (error) throw error;
-
         toast({ title: "Success", description: "Article created successfully" });
       }
 
@@ -381,12 +358,8 @@ const BlogEditor = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this article?')) return;
     try {
-      const { error } = await supabase
-        .from('articles')
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('articles').delete().eq('id', id);
       if (error) throw error;
-
       toast({ title: "Success", description: "Article deleted successfully" });
       fetchArticles();
     } catch (error: any) {
@@ -409,7 +382,24 @@ const BlogEditor = () => {
     setEditingId(null);
   };
 
-  // ========= GALLERY: MULTI-UPLOAD WITH FOLDER SUPPORT (FIXED) =========
+  // ---------- Gallery ----------
+  const fetchGalleryImages = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('gallery')
+        .select('id, country, title, description, label, image_url, image_path, folder, created_at, updated_at')
+        .eq('country', selectedCountry)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setGalleryImages(data || []);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error fetching images", description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGalleryFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -426,6 +416,7 @@ const BlogEditor = () => {
       return;
     }
 
+    // Only require a folder when uploading multiple images
     let folderSafe = galleryUploadForm.folder ? slugifyFolder(galleryUploadForm.folder) : "";
     if (hasMultiple && !folderSafe) {
       toast({
@@ -439,30 +430,16 @@ const BlogEditor = () => {
     setUploadLoading(true);
     try {
       const bucket = `gallery-${galleryUploadForm.country}`;
-
-      console.log("[UPLOAD] Bucket:", bucket);
-      console.log("[UPLOAD] Files:", files.map(f => f.name));
-      console.log("[UPLOAD] Folder (raw):", galleryUploadForm.folder, "→ (safe):", folderSafe);
-
+      // Upload each file and insert a DB row
       for (const file of files) {
         const fileExt = file.name.split(".").pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
         const filePath = folderSafe ? `${folderSafe}/${fileName}` : `${fileName}`;
 
-        console.log("[UPLOAD] ->", filePath);
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file);
+        if (uploadError) throw new Error(uploadError.message);
 
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(filePath, file);
-
-        if (uploadError) {
-          console.error("[UPLOAD ERROR]", uploadError);
-          throw new Error(`Storage upload failed: ${uploadError.message}`);
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from(bucket)
-          .getPublicUrl(filePath);
+        const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(filePath);
 
         const { error: dbError } = await supabase
           .from("gallery")
@@ -476,24 +453,19 @@ const BlogEditor = () => {
             folder: folderSafe || null,
           });
 
-        if (dbError) {
-          console.error("[DB INSERT ERROR]", dbError);
-          throw new Error(`DB insert failed: ${dbError.message}`);
-        }
+        if (dbError) throw new Error(dbError.message);
 
-        // small delay to keep ordering deterministic
-        await new Promise((r) => setTimeout(r, 15));
+        await new Promise((r) => setTimeout(r, 15)); // small spacing for ordering
       }
 
       toast({
         title: "Upload complete",
-        description:
-          hasMultiple
-            ? `${files.length} images uploaded to "${folderSafe}".`
-            : "Image uploaded successfully.",
+        description: hasMultiple
+          ? `${files.length} images uploaded to "${folderSafe}".`
+          : "Image uploaded successfully.",
       });
 
-      // Reset upload form
+      // Reset form
       setGalleryUploadForm({
         title: "",
         description: "",
@@ -507,11 +479,7 @@ const BlogEditor = () => {
         fetchGalleryImages();
       }
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Upload failed",
-        description: error.message || "Unknown error",
-      });
+      toast({ variant: "destructive", title: "Upload failed", description: error.message || "Unknown error" });
     } finally {
       setUploadLoading(false);
     }
@@ -560,6 +528,7 @@ const BlogEditor = () => {
         .remove([image.image_path]);
 
       if (storageError) {
+        // continue to DB delete; log for your reference
         console.error('Storage delete error:', storageError);
       }
 
@@ -571,7 +540,6 @@ const BlogEditor = () => {
       if (dbError) throw dbError;
 
       toast({ title: "Image deleted successfully", description: "The image has been removed from the gallery" });
-
       fetchGalleryImages();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Delete failed", description: error.message });
@@ -581,11 +549,7 @@ const BlogEditor = () => {
   const toggleGalleryVisibility = async (image: GalleryImage) => {
     try {
       const newLabel = image.label === 'private' ? null : 'private';
-      const { error } = await supabase
-        .from('gallery')
-        .update({ label: newLabel })
-        .eq('id', image.id);
-
+      const { error } = await supabase.from('gallery').update({ label: newLabel }).eq('id', image.id);
       if (error) throw error;
 
       toast({
@@ -601,6 +565,7 @@ const BlogEditor = () => {
 
   const handleViewChange = (view: ActiveView) => setActiveView(view);
 
+  // ---------- UI ----------
   const renderBlogEditor = () => (
     <div className="space-y-6">
       <Card>
@@ -612,89 +577,44 @@ const BlogEditor = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <Label htmlFor="title">Title *</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => handleTitleChange(e.target.value)}
-                  required
-                />
+                <Input id="title" value={title} onChange={(e) => handleTitleChange(e.target.value)} required />
               </div>
 
               <div>
                 <Label htmlFor="slug">URL Slug *</Label>
-                <Input
-                  id="slug"
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
-                  placeholder="auto-generated-from-title"
-                  required
-                />
+                <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="auto-generated-from-title" required />
               </div>
 
               <div>
                 <Label htmlFor="meta-title">SEO Meta Title</Label>
-                <Input
-                  id="meta-title"
-                  value={metaTitle}
-                  onChange={(e) => setMetaTitle(e.target.value)}
-                  placeholder="Leave empty to use main title"
-                  maxLength={60}
-                />
+                <Input id="meta-title" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} placeholder="Leave empty to use main title" maxLength={60} />
                 <p className="text-xs text-gray-500 mt-1">{metaTitle.length}/60 characters</p>
               </div>
             </div>
 
             <div>
               <Label htmlFor="excerpt">Excerpt *</Label>
-              <Textarea
-                id="excerpt"
-                value={excerpt}
-                onChange={(e) => setExcerpt(e.target.value)}
-                rows={3}
-                required
-              />
+              <Textarea id="excerpt" value={excerpt} onChange={(e) => setExcerpt(e.target.value)} rows={3} required />
             </div>
 
             <div>
               <Label htmlFor="meta-description">SEO Meta Description</Label>
-              <Textarea
-                id="meta-description"
-                value={metaDescription}
-                onChange={(e) => setMetaDescription(e.target.value)}
-                placeholder="Leave empty to use excerpt"
-                rows={2}
-                maxLength={160}
-              />
+              <Textarea id="meta-description" value={metaDescription} onChange={(e) => setMetaDescription(e.target.value)} placeholder="Leave empty to use excerpt" rows={2} maxLength={160} />
               <p className="text-xs text-gray-500 mt-1">{metaDescription.length}/160 characters</p>
             </div>
 
             <div>
               <Label htmlFor="tags">Tags/Hashtags</Label>
               <div className="flex gap-2 mb-2">
-                <Input
-                  id="tags"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyPress={handleTagInputKeyPress}
-                  placeholder="Add tags (press Enter or click Add)"
-                />
-                <Button type="button" onClick={handleAddTag} variant="outline">
-                  Add
-                </Button>
+                <Input id="tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyPress={handleTagInputKeyPress} placeholder="Add tags (press Enter or click Add)" />
+                <Button type="button" onClick={handleAddTag} variant="outline">Add</Button>
               </div>
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
-                    >
+                    <span key={index} className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
                       #{tag}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTag(tag)}
-                        className="ml-1 text-blue-600 hover:text-blue-800"
-                      >
+                      <button type="button" onClick={() => handleRemoveTag(tag)} className="ml-1 text-blue-600 hover:text-blue-800">
                         <X className="h-3 w-3" />
                       </button>
                     </span>
@@ -707,26 +627,14 @@ const BlogEditor = () => {
               <Label htmlFor="content">Content *</Label>
 
               <div className="border rounded-t-md bg-gray-50 p-2 flex flex-wrap gap-1 mb-0">
-                <Button type="button" variant="ghost" size="sm" onClick={handleBold} className="h-8 w-8 p-0" title="Bold (**text**)">
-                  <Bold className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={handleItalic} className="h-8 w-8 p-0" title="Italic (*text*)">
-                  <Italic className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={handleUnderline} className="h-8 w-8 p-0" title="Underline (<u>text</u>)">
-                  <Underline className="h-4 w-4" />
-                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleBold} className="h-8 w-8 p-0" title="Bold (**text**)"><Bold className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleItalic} className="h-8 w-8 p-0" title="Italic (*text*)"><Italic className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleUnderline} className="h-8 w-8 p-0" title="Underline (<u>text</u>)"><Underline className="h-4 w-4" /></Button>
                 <div className="w-px h-6 bg-gray-300 mx-1" />
-                <Button type="button" variant="ghost" size="sm" onClick={handleLink} className="h-8 w-8 p-0" title="Add Link">
-                  <LinkIcon className="h-4 w-4" />
-                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleLink} className="h-8 w-8 p-0" title="Add Link"><LinkIcon className="h-4 w-4" /></Button>
                 <div className="w-px h-6 bg-gray-300 mx-1" />
-                <Button type="button" variant="ghost" size="sm" onClick={handleBulletList} className="h-8 w-8 p-0" title="Bullet List">
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={handleNumberedList} className="h-8 w-8 p-0" title="Numbered List">
-                  <span className="text-xs font-bold">1.</span>
-                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleBulletList} className="h-8 w-8 p-0" title="Bullet List"><List className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleNumberedList} className="h-8 w-8 p-0" title="Numbered List"><span className="text-xs font-bold">1.</span></Button>
               </div>
 
               <Textarea
@@ -784,33 +692,18 @@ const BlogEditor = () => {
       {showLinkDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Add Link</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Add Link</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="link-text">Link Text</Label>
-                <Input
-                  id="link-text"
-                  value={linkText}
-                  onChange={(e) => setLinkText(e.target.value)}
-                  placeholder="Text to display"
-                />
+                <Input id="link-text" value={linkText} onChange={(e) => setLinkText(e.target.value)} placeholder="Text to display" />
               </div>
               <div>
                 <Label htmlFor="link-url">URL *</Label>
-                <Input
-                  id="link-url"
-                  value={linkUrl}
-                  onChange={(e) => setLinkUrl(e.target.value)}
-                  placeholder="https://example.com"
-                  required
-                />
+                <Input id="link-url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://example.com" required />
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setShowLinkDialog(false)}>
-                  Cancel
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowLinkDialog(false)}>Cancel</Button>
                 <Button onClick={insertLink}>Insert Link</Button>
               </div>
             </CardContent>
@@ -819,9 +712,7 @@ const BlogEditor = () => {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Published Articles</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Published Articles</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-4">
             {articles.map((article) => (
@@ -833,30 +724,20 @@ const BlogEditor = () => {
                     <span>{new Date(article.published_at).toLocaleDateString()}</span>
                     <span>Slug: /{article.slug}</span>
                     {article.meta_title && <span>SEO: ✓</span>}
-                    {article.tags && article.tags.length > 0 && (
-                      <span>Tags: {article.tags.length}</span>
-                    )}
+                    {article.tags && article.tags.length > 0 && <span>Tags: {article.tags.length}</span>}
                   </div>
                   {article.tags && article.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {article.tags.slice(0, 3).map((tag, index) => (
-                        <span key={index} className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                          #{tag}
-                        </span>
+                        <span key={index} className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">#{tag}</span>
                       ))}
-                      {article.tags.length > 3 && (
-                        <span className="text-xs text-gray-500">+{article.tags.length - 3} more</span>
-                      )}
+                      {article.tags.length > 3 && <span className="text-xs text-gray-500">+{article.tags.length - 3} more</span>}
                     </div>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleEdit(article)}>
-                    Edit
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(article.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleEdit(article)}>Edit</Button>
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(article.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
             ))}
@@ -869,9 +750,7 @@ const BlogEditor = () => {
   const renderGalleryEditor = () => (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Select Country</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Select Country</CardTitle></CardHeader>
         <CardContent>
           <Select value={selectedCountry} onValueChange={setSelectedCountry}>
             <SelectTrigger className="w-48">
@@ -879,9 +758,7 @@ const BlogEditor = () => {
             </SelectTrigger>
             <SelectContent>
               {countries.map((c) => (
-                <SelectItem key={c.value} value={c.value}>
-                  {c.label}
-                </SelectItem>
+                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -913,15 +790,9 @@ const BlogEditor = () => {
                   value={galleryUploadForm.country}
                   onValueChange={(value) => setGalleryUploadForm({ ...galleryUploadForm, country: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select country" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
                   <SelectContent>
-                    {countries.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
+                    {countries.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -946,6 +817,7 @@ const BlogEditor = () => {
               />
             </div>
 
+            {/* FOLDER FIELD */}
             <div>
               <Label>Folder (Optional, REQUIRED if uploading multiple)</Label>
               <Input
@@ -954,7 +826,7 @@ const BlogEditor = () => {
                 placeholder="e.g., events, csr, operations/jan"
               />
               <p className="text-xs text-gray-500 mt-1">
-                We’ll automatically clean this into a safe path (no spaces/special characters).
+                We’ll sanitize this for storage (no spaces/special characters).
               </p>
             </div>
 
@@ -978,7 +850,7 @@ const BlogEditor = () => {
                 </p>
               )}
               <p className="text-xs text-gray-500">
-                If you select more than one file, the Folder field is required.
+                If you select more than one file, the Folder field above is required.
               </p>
             </div>
 
@@ -998,7 +870,7 @@ const BlogEditor = () => {
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
           ) : galleryImages.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -1009,11 +881,7 @@ const BlogEditor = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {galleryImages.map((image) => (
                 <div key={image.id} className="border rounded-lg overflow-hidden">
-                  <img
-                    src={image.image_url}
-                    alt={image.title}
-                    className="w-full h-48 object-cover"
-                  />
+                  <img src={image.image_url} alt={image.title} className="w-full h-48 object-cover" />
                   <div className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -1025,21 +893,10 @@ const BlogEditor = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleGalleryEdit(image)}
-                          title="Edit"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleGalleryEdit(image)} title="Edit">
                           <Edit className="h-3 w-3" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleGalleryDelete(image)}
-                          className="text-red-600 hover:text-red-700"
-                          title="Delete"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleGalleryDelete(image)} className="text-red-600 hover:text-red-700" title="Delete">
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
@@ -1072,39 +929,23 @@ const BlogEditor = () => {
       {editingImage && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Edit Image</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Edit Image</CardTitle></CardHeader>
             <CardContent>
               <form onSubmit={handleUpdateGalleryImage} className="space-y-4">
                 <div>
                   <Label>Title</Label>
-                  <Input
-                    value={galleryEditForm.title}
-                    onChange={(e) => setGalleryEditForm({ ...galleryEditForm, title: e.target.value })}
-                    required
-                  />
+                  <Input value={galleryEditForm.title} onChange={(e) => setGalleryEditForm({ ...galleryEditForm, title: e.target.value })} required />
                 </div>
                 <div>
                   <Label>Description</Label>
-                  <Textarea
-                    value={galleryEditForm.description}
-                    onChange={(e) => setGalleryEditForm({ ...galleryEditForm, description: e.target.value })}
-                    rows={3}
-                  />
+                  <Textarea value={galleryEditForm.description} onChange={(e) => setGalleryEditForm({ ...galleryEditForm, description: e.target.value })} rows={3} />
                 </div>
                 <div>
                   <Label>Label</Label>
-                  <Input
-                    value={galleryEditForm.label}
-                    onChange={(e) => setGalleryEditForm({ ...galleryEditForm, label: e.target.value })}
-                    placeholder="e.g., private"
-                  />
+                  <Input value={galleryEditForm.label} onChange={(e) => setGalleryEditForm({ ...galleryEditForm, label: e.target.value })} placeholder="e.g., private" />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setEditingImage(null)}>
-                    Cancel
-                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setEditingImage(null)}>Cancel</Button>
                   <Button type="submit">Update</Button>
                 </div>
               </form>
@@ -1120,19 +961,13 @@ const BlogEditor = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
-
       <div className="pt-32">
         <div className="bg-white shadow-sm border-b">
           <div className="container mx-auto px-4 py-4">
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-bold">Blog & Gallery Editor</h1>
-              <Button
-                variant="outline"
-                onClick={handleLogout}
-                className="flex items-center gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                Logout
+              <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
+                <LogOut className="h-4 w-4" /> Logout
               </Button>
             </div>
           </div>
@@ -1141,23 +976,12 @@ const BlogEditor = () => {
         <div className="container mx-auto px-4 py-8">
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Content Management</h2>
-
             <div className="flex gap-4 mb-6">
-              <Button
-                variant={activeView === "blog" ? "default" : "outline"}
-                onClick={() => handleViewChange("blog")}
-                className="flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                Blog Editor
+              <Button variant={activeView === "blog" ? "default" : "outline"} onClick={() => handleViewChange("blog")} className="flex items-center gap-2">
+                <FileText className="h-4 w-4" /> Blog Editor
               </Button>
-              <Button
-                variant={activeView === "gallery" ? "default" : "outline"}
-                onClick={() => handleViewChange("gallery")}
-                className="flex items-center gap-2"
-              >
-                <ImageIcon className="h-4 w-4" />
-                Gallery Editor
+              <Button variant={activeView === "gallery" ? "default" : "outline"} onClick={() => handleViewChange("gallery")} className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4" /> Gallery Editor
               </Button>
             </div>
           </div>
@@ -1165,7 +989,6 @@ const BlogEditor = () => {
           {activeView === "blog" ? renderBlogEditor() : renderGalleryEditor()}
         </div>
       </div>
-
       <Footer />
     </div>
   );
