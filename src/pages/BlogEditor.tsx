@@ -61,12 +61,12 @@ type GalleryUploadForm = {
   description: string;
   country: string;
   label: string;
-  folder: string;   // used to group photos
-  files: File[];    // supports multi-select
+  folder: string;   // groups photos
+  files: File[];    // multi-select
 };
 
 function slugifyFolder(input: string): string {
-  // Trim slashes; allow nested folders but sanitize each part
+  // Trim slashes; allow nested folders; sanitize parts
   let s = input.trim().replace(/^\/+|\/+$/g, "");
   return s
     .split("/")
@@ -391,7 +391,7 @@ const BlogEditor = () => {
         .eq('country', selectedCountry)
         .order('created_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
       setGalleryImages(data || []);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error fetching images", description: error.message });
