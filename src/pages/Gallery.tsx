@@ -8,20 +8,20 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ImageIcon } from "lucide-react";
 
-interface GalleryImage {
+interface GalleryFolder {
   id: string;
-  title: string;
+  name: string;
+  display_name: string;
   description: string | null;
-  image_url: string;
+  cover_image_url: string | null;
   created_at: string;
 }
 
 const Gallery = () => {
   const { country } = useParams<{ country: string }>();
   const location = useLocation();
-  const [images, setImages] = useState<GalleryImage[]>([]);
+  const [folders, setFolders] = useState<GalleryFolder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const { toast } = useToast();
 
   // Extract country from URL path
@@ -65,34 +65,33 @@ const Gallery = () => {
   };
 
   useEffect(() => {
-    fetchGalleryImages();
+    fetchGalleryFolders();
   }, [currentCountry]);
 
-  const fetchGalleryImages = async () => {
+  const fetchGalleryFolders = async () => {
     setLoading(true);
     try {
-      console.log('Fetching images for country:', currentCountry);
+      console.log('Fetching folders for country:', currentCountry);
       
       const { data, error } = await supabase
-        .from('gallery')
-        .select('id, title, description, image_url, created_at')
+        .from('gallery_folders')
+        .select('id, name, display_name, description, cover_image_url, created_at')
         .eq('country', currentCountry)
-        .or('label.is.null,label.neq.private')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching gallery images:', error);
+        console.error('Error fetching gallery folders:', error);
         throw error;
       }
 
-      console.log('Raw data from Supabase:', data);
-      console.log('Number of images found:', data?.length || 0);
-      setImages(data || []);
+      console.log('Raw folders data from Supabase:', data);
+      console.log('Number of folders found:', data?.length || 0);
+      setFolders(data || []);
     } catch (error: any) {
-      console.error('Gallery fetch error:', error);
+      console.error('Gallery folders fetch error:', error);
       toast({
         variant: "destructive",
-        title: "Error loading gallery",
+        title: "Error loading gallery folders",
         description: error.message
       });
     } finally {
@@ -127,53 +126,55 @@ const Gallery = () => {
           )}
 
           {/* Empty State */}
-          {!loading && images.length === 0 && (
+          {!loading && folders.length === 0 && (
             <div className="text-center py-16">
               <ImageIcon className="h-24 w-24 mx-auto mb-6 text-gray-300" />
-              <h3 className="text-xl font-medium text-gray-900 mb-2">No Images Yet</h3>
+              <h3 className="text-xl font-medium text-gray-900 mb-2">No Folders Yet</h3>
               <p className="text-gray-600">
-                Gallery images for {countryNames[currentCountry]} will appear here once they're uploaded.
+                Gallery folders for {countryNames[currentCountry]} will appear here once they're created.
               </p>
             </div>
           )}
 
-          {/* Gallery Grid */}
-          {!loading && images.length > 0 && (
+          {/* Folders Grid */}
+          {!loading && folders.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {images.map((image, index) => (
+              {folders.map((folder, index) => (
                 <motion.div
-                  key={image.id}
+                  key={folder.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                   className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
-                  onClick={() => setSelectedImage(image)}
+                  onClick={() => {
+                    const countryPath = currentCountry === 'singapore' ? '' : `/${currentCountry}`;
+                    window.location.href = `${countryPath}/gallery/${folder.name}`;
+                  }}
                 >
-                  <div className="aspect-square overflow-hidden">
-                    <motion.img
-                      src={image.image_url}
-                      alt={image.title}
-                      className="w-full h-full object-cover"
-                      whileHover={{ scale: 1.05 }}
-                      transition={{ duration: 0.3 }}
-                      onError={(e) => {
-                        console.error('Image load error:', e);
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
+                  <div className="aspect-square overflow-hidden bg-gray-100 flex items-center justify-center">
+                    {folder.cover_image_url ? (
+                      <motion.img
+                        src={folder.cover_image_url}
+                        alt={folder.display_name}
+                        className="w-full h-full object-cover"
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    ) : (
+                      <ImageIcon className="h-16 w-16 text-gray-400" />
+                    )}
                   </div>
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1">
-                      {image.title}
+                    <h3 className="font-semibold text-gray-900 mb-2">
+                      {folder.display_name}
                     </h3>
-                    {image.description && (
+                    {folder.description && (
                       <p className="text-sm text-gray-600 line-clamp-2">
-                        {image.description}
+                        {folder.description}
                       </p>
                     )}
                     <div className="text-xs text-gray-400 mt-3">
-                      {new Date(image.created_at).toLocaleDateString()}
+                      {new Date(folder.created_at).toLocaleDateString()}
                     </div>
                   </div>
                 </motion.div>
@@ -183,30 +184,6 @@ const Gallery = () => {
         </div>
       </div>
 
-      {/* Image Modal */}
-      {selectedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50">
-          <div className="max-w-4xl max-h-full w-full">
-            <button
-              onClick={() => setSelectedImage(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 text-2xl font-bold z-10"
-            >
-              ×
-            </button>
-            <img
-              src={selectedImage.image_url}
-              alt={selectedImage.title}
-              className="w-full h-full object-contain"
-            />
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
-              <h3 className="text-white text-xl font-semibold mb-2">{selectedImage.title}</h3>
-              {selectedImage.description && (
-                <p className="text-gray-300">{selectedImage.description}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       
       <Footer />
     </div>

@@ -19,6 +19,7 @@ import GlobalPresenceM from '@/pages/GlobalPresenceM';
 import GlobalPresenceB from '@/pages/GlobalPresenceB';
 import AboutUs from '@/pages/aboutus';
 import Gallery from '@/pages/Gallery';
+import FolderGallery from '@/pages/FolderGallery';
 import Career from '@/pages/Career';
 import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
@@ -114,13 +115,14 @@ const App: React.FC = () => {
               <Route path="/bangladesh/home" element={<BangladeshHome />} />
               <Route path="/pakistan/home" element={<PakistanHome />} />
 
-              {/* Global pages */}
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/services" element={<Services />} />
-              <Route path="/global-presence" element={<GlobalPresence />} />
-              <Route path="/about-us" element={<AboutUs />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/career" element={<Career />} />
+               {/* Global pages */}
+               <Route path="/contact" element={<Contact />} />
+               <Route path="/services" element={<Services />} />
+               <Route path="/global-presence" element={<GlobalPresence />} />
+               <Route path="/about-us" element={<AboutUs />} />
+               <Route path="/gallery" element={<Gallery />} />
+               <Route path="/gallery/:folderName" element={<FolderGallery />} />
+               <Route path="/career" element={<Career />} />
               <Route path="/blog" element={<Blog />} />
               <Route path="/blogs" element={<Blog />} />
               <Route path="/blog/:slug" element={<BlogDetail />} />
@@ -142,10 +144,11 @@ const App: React.FC = () => {
               {/* Country-specific pages */}
               {countries.map((country) => (
                 <React.Fragment key={country}>
-                  <Route path={`/${country}/contact`} element={<Contact />} />
-                  <Route path={`/${country}/about-us`} element={<AboutUs />} />
-                  <Route path={`/${country}/gallery`} element={<Gallery />} />
-                  <Route path={`/${country}/career`} element={<Career />} />
+                   <Route path={`/${country}/contact`} element={<Contact />} />
+                   <Route path={`/${country}/about-us`} element={<AboutUs />} />
+                   <Route path={`/${country}/gallery`} element={<Gallery />} />
+                   <Route path={`/${country}/gallery/:folderName`} element={<FolderGallery />} />
+                   <Route path={`/${country}/career`} element={<Career />} />
                   <Route path={`/${country}/services`} element={<Services />} />
                   <Route path={`/${country}/blog`} element={<Blog />} />
                   <Route path={`/${country}/blogs`} element={<Blog />} />
