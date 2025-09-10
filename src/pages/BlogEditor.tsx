@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, Trash2, Upload, FileText, Edit, X, Bold, Link, Italic, Underline, List, Image } from "lucide-react";
+import { LogOut, Trash2, Upload, FileText, Edit, X, Bold, Link as LinkIcon, Italic, Underline, List, Image as ImageIcon } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 
@@ -19,14 +19,14 @@ interface Article {
   content: string;
   excerpt: string;
   slug: string;
-  featured_image?: string;
+  featured_image?: string | null;
   published_at: string;
   created_at: string;
   updated_at: string;
-  meta_title?: string;
-  meta_description?: string;
-  alt_text?: string;
-  tags?: string[];
+  meta_title?: string | null;
+  meta_description?: string | null;
+  alt_text?: string | null;
+  tags?: string[] | null;
 }
 
 interface GalleryImage {
@@ -37,6 +37,7 @@ interface GalleryImage {
   label: string | null;
   image_url: string;
   image_path: string;
+  folder: string | null; // 👈 NEW
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +51,16 @@ const countries = [
   { value: "pakistan", label: "Pakistan" },
   { value: "srilanka", label: "Sri Lanka" },
 ];
+
+type GalleryUploadForm = {
+  title: string;
+  description: string;
+  country: string;
+  label: string;
+  folder: string;
+  file: File | null;   // kept for backward compatibility (single file)
+  files?: File[];      // NEW: multiple files
+};
 
 const BlogEditor = () => {
   const navigate = useNavigate();
@@ -82,13 +93,14 @@ const BlogEditor = () => {
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
 
   // Gallery upload form state
-  const [galleryUploadForm, setGalleryUploadForm] = useState({
+  const [galleryUploadForm, setGalleryUploadForm] = useState<GalleryUploadForm>({
     title: "",
     description: "",
     country: "singapore",
     label: "",
     folder: "",
-    file: null as File | null,
+    file: null,
+    files: [],
   });
 
   // Gallery edit form state
@@ -104,7 +116,6 @@ const BlogEditor = () => {
   const [linkText, setLinkText] = useState('');
 
   useEffect(() => {
-    // Check if admin is logged in
     const adminStatus = localStorage.getItem("isAdminLoggedIn");
     if (adminStatus === "true") {
       setIsLoggedIn(true);
@@ -112,12 +123,14 @@ const BlogEditor = () => {
     } else {
       navigate("/admin-login");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   useEffect(() => {
     if (activeView === "gallery" && isLoggedIn) {
       fetchGalleryImages();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, selectedCountry, isLoggedIn]);
 
   const handleLogout = () => {
@@ -128,20 +141,14 @@ const BlogEditor = () => {
   const fetchArticles = async () => {
     setLoading(true);
     try {
-      console.log('Fetching articles...');
       const { data, error } = await supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching articles:', error);
-        throw error;
-      }
-      console.log('Articles fetched:', data);
+      if (error) throw error;
       setArticles(data || []);
     } catch (error: any) {
-      console.error('Fetch articles error:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -155,21 +162,15 @@ const BlogEditor = () => {
   const fetchGalleryImages = async () => {
     setLoading(true);
     try {
-      console.log('Fetching gallery images for:', selectedCountry);
       const { data, error } = await supabase
         .from('gallery')
-        .select('*')
+        .select('id, country, title, description, label, image_url, image_path, folder, created_at, updated_at')
         .eq('country', selectedCountry)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching gallery images:', error);
-        throw error;
-      }
-      console.log('Gallery images fetched:', data);
+      if (error) throw error;
       setGalleryImages(data || []);
     } catch (error: any) {
-      console.error('Fetch gallery images error:', error);
       toast({
         variant: "destructive",
         title: "Error fetching images",
@@ -180,28 +181,22 @@ const BlogEditor = () => {
     }
   };
 
-  const generateSlug = (title: string) => {
-    return title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  };
+  const generateSlug = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const handleTitleChange = (value: string) => {
     setTitle(value);
     if (!editingId) {
-      const generatedSlug = generateSlug(value);
-      setSlug(generatedSlug);
-      
-      if (!metaTitle) {
-        setMetaTitle(value);
-      }
+      const generated = generateSlug(value);
+      setSlug(generated);
+      if (!metaTitle) setMetaTitle(value);
     }
   };
 
   const handleAddTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim().toLowerCase())) {
-      setTags([...tags, tagInput.trim().toLowerCase()]);
+    const t = tagInput.trim().toLowerCase();
+    if (t && !tags.includes(t)) {
+      setTags([...tags, t]);
       setTagInput('');
     }
   };
@@ -218,18 +213,15 @@ const BlogEditor = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const file = event.target.files?.[0] || null;
+    setSelectedFile(file);
     if (file) {
-      setSelectedFile(file);
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
+      reader.onload = (e) => setImagePreview(e.target?.result as string);
       reader.readAsDataURL(file);
-      
-      if (!altText && title) {
-        setAltText(title);
-      }
+      if (!altText && title) setAltText(title);
+    } else {
+      setImagePreview(null);
     }
   };
 
@@ -240,12 +232,11 @@ const BlogEditor = () => {
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selectedText = textarea.value.substring(start, end);
-    
     const newText = beforeText + selectedText + afterText;
     const newContent = content.substring(0, start) + newText + content.substring(end);
-    
+
     setContent(newContent);
-    
+
     setTimeout(() => {
       textarea.focus();
       const newCursorPos = start + beforeText.length + selectedText.length;
@@ -262,11 +253,9 @@ const BlogEditor = () => {
   const handleLink = () => {
     const textarea = contentRef.current;
     if (!textarea) return;
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selectedText = textarea.value.substring(start, end);
-    
     setLinkText(selectedText);
     setShowLinkDialog(true);
   };
@@ -280,50 +269,40 @@ const BlogEditor = () => {
       });
       return;
     }
-
     const displayText = linkText || linkUrl;
     const linkMarkdown = `[${displayText}](${linkUrl})`;
-    
     const textarea = contentRef.current;
     if (textarea) {
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const newContent = content.substring(0, start) + linkMarkdown + content.substring(end);
       setContent(newContent);
-      
       setTimeout(() => {
         textarea.focus();
         const newCursorPos = start + linkMarkdown.length;
         textarea.setSelectionRange(newCursorPos, newCursorPos);
       }, 0);
     }
-
     setShowLinkDialog(false);
     setLinkUrl('');
     setLinkText('');
   };
 
-  const uploadImage = async (file: File): Promise<string> => {
+  const uploadBlogImage = async (file: File): Promise<string> => {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
+    const fileName = `${Math.random().toString(36).slice(2)}.${fileExt}`;
     const filePath = `${fileName}`;
-
-    console.log('Uploading image to blog-images bucket:', filePath);
 
     const { error: uploadError } = await supabase.storage
       .from('blog-images')
       .upload(filePath, file);
 
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
     const { data: { publicUrl } } = supabase.storage
       .from('blog-images')
       .getPublicUrl(filePath);
 
-    console.log('Image uploaded successfully:', publicUrl);
     return publicUrl;
   };
 
@@ -340,12 +319,9 @@ const BlogEditor = () => {
 
     setLoading(true);
     try {
-      console.log('Submitting article...');
-      let featuredImage = null;
-      
+      let featuredImage: string | null = null;
       if (selectedFile) {
-        console.log('Uploading featured image...');
-        featuredImage = await uploadImage(selectedFile);
+        featuredImage = await uploadBlogImage(selectedFile);
       }
 
       const articleData = {
@@ -361,45 +337,26 @@ const BlogEditor = () => {
         published_at: new Date().toISOString(),
       };
 
-      console.log('Article data:', articleData);
-
       if (editingId) {
-        console.log('Updating article:', editingId);
         const { error } = await supabase
           .from('articles')
           .update(articleData)
           .eq('id', editingId);
+        if (error) throw error;
 
-        if (error) {
-          console.error('Update error:', error);
-          throw error;
-        }
-        
-        toast({
-          title: "Success",
-          description: "Article updated successfully",
-        });
+        toast({ title: "Success", description: "Article updated successfully" });
       } else {
-        console.log('Creating new article...');
         const { error } = await supabase
           .from('articles')
           .insert([articleData]);
+        if (error) throw error;
 
-        if (error) {
-          console.error('Insert error:', error);
-          throw error;
-        }
-        
-        toast({
-          title: "Success",
-          description: "Article created successfully",
-        });
+        toast({ title: "Success", description: "Article created successfully" });
       }
 
       resetForm();
       fetchArticles();
     } catch (error: any) {
-      console.error('Submit error:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -422,6 +379,8 @@ const BlogEditor = () => {
     setEditingId(article.id);
     if (article.featured_image) {
       setImagePreview(article.featured_image);
+    } else {
+      setImagePreview(null);
     }
   };
 
@@ -429,25 +388,15 @@ const BlogEditor = () => {
     if (!confirm('Are you sure you want to delete this article?')) return;
 
     try {
-      console.log('Deleting article:', id);
       const { error } = await supabase
         .from('articles')
         .delete()
         .eq('id', id);
+      if (error) throw error;
 
-      if (error) {
-        console.error('Delete error:', error);
-        throw error;
-      }
-      
-      toast({
-        title: "Success",
-        description: "Article deleted successfully",
-      });
-      
+      toast({ title: "Success", description: "Article deleted successfully" });
       fetchArticles();
     } catch (error: any) {
-      console.error('Delete error:', error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -471,69 +420,95 @@ const BlogEditor = () => {
     setEditingId(null);
   };
 
+  // ========= GALLERY: MULTI-UPLOAD WITH FOLDER SUPPORT =========
+
   const handleGalleryFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!galleryUploadForm.file || !galleryUploadForm.title) {
+
+    const files: File[] = galleryUploadForm.files && galleryUploadForm.files.length
+      ? galleryUploadForm.files
+      : (galleryUploadForm.file ? [galleryUploadForm.file] : []);
+
+    if (files.length === 0 || !galleryUploadForm.title) {
       toast({
         variant: "destructive",
         title: "Missing required fields",
-        description: "Please provide both title and image file",
+        description: "Please provide title and at least one image file",
+      });
+      return;
+    }
+
+    if (files.length > 1 && !galleryUploadForm.folder) {
+      toast({
+        variant: "destructive",
+        title: "Folder required",
+        description: "Please enter a folder name when uploading multiple images.",
       });
       return;
     }
 
     setUploadLoading(true);
     try {
-      const fileExt = galleryUploadForm.file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = galleryUploadForm.folder
-        ? `${galleryUploadForm.folder}/${fileName}`
-        : `${fileName}`;
+      const bucket = `gallery-${galleryUploadForm.country}`;
 
-      console.log(`Uploading to gallery-${galleryUploadForm.country} bucket:`, filePath);
+      for (const file of files) {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+        const filePath = galleryUploadForm.folder
+          ? `${galleryUploadForm.folder}/${fileName}`
+          : `${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from(`gallery-${galleryUploadForm.country}`)
-        .upload(filePath, galleryUploadForm.file);
+        const { error: uploadError } = await supabase.storage
+          .from(bucket)
+          .upload(filePath, file);
 
-      if (uploadError) {
-        console.error('Gallery upload error:', uploadError);
-        throw uploadError;
-      }
+        if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from(`gallery-${galleryUploadForm.country}`)
-        .getPublicUrl(filePath);
+        const { data: { publicUrl } } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(filePath);
 
-      console.log('Gallery image uploaded:', publicUrl);
+        const { error: dbError } = await supabase
+          .from("gallery")
+          .insert({
+            country: galleryUploadForm.country,
+            title: galleryUploadForm.title,
+            description: galleryUploadForm.description || null,
+            label: galleryUploadForm.label || null,
+            image_url: publicUrl,
+            image_path: filePath,
+            folder: galleryUploadForm.folder || null, // 👈 store folder
+          });
 
-      const { error: dbError } = await supabase
-        .from('gallery')
-        .insert({
-          country: galleryUploadForm.country,
-          title: galleryUploadForm.title,
-          description: galleryUploadForm.description || null,
-          label: galleryUploadForm.label || null,
-          image_url: publicUrl,
-          image_path: filePath,
-        });
+        if (dbError) throw dbError;
 
-      if (dbError) {
-        console.error('Gallery DB error:', dbError);
-        throw dbError;
+        // slight delay to avoid identical timestamps if needed
+        await new Promise((r) => setTimeout(r, 10));
       }
 
       toast({
-        title: "Image uploaded successfully",
-        description: "The image has been added to the gallery",
+        title: "Upload complete",
+        description:
+          files.length > 1
+            ? `${files.length} images uploaded to "${galleryUploadForm.folder}".`
+            : "Image uploaded successfully.",
       });
 
-      setGalleryUploadForm({ title: "", description: "", country: "singapore", label: "", folder: "", file: null });
+      // Reset upload form
+      setGalleryUploadForm({
+        title: "",
+        description: "",
+        country: "singapore",
+        label: "",
+        folder: "",
+        file: null,
+        files: [],
+      });
+
       if (galleryUploadForm.country === selectedCountry) {
         fetchGalleryImages();
       }
     } catch (error: any) {
-      console.error('Gallery upload error:', error);
       toast({
         variant: "destructive",
         title: "Upload failed",
@@ -595,6 +570,7 @@ const BlogEditor = () => {
         .remove([image.image_path]);
 
       if (storageError) {
+        // log but continue to delete DB row
         console.error('Storage delete error:', storageError);
       }
 
@@ -624,7 +600,6 @@ const BlogEditor = () => {
   const toggleGalleryVisibility = async (image: GalleryImage) => {
     try {
       const newLabel = image.label === 'private' ? null : 'private';
-      
       const { error } = await supabase
         .from('gallery')
         .update({ label: newLabel })
@@ -647,9 +622,7 @@ const BlogEditor = () => {
     }
   };
 
-  const handleViewChange = (view: ActiveView) => {
-    setActiveView(view);
-  };
+  const handleViewChange = (view: ActiveView) => setActiveView(view);
 
   const renderBlogEditor = () => (
     <div className="space-y-6">
@@ -755,68 +728,26 @@ const BlogEditor = () => {
 
             <div>
               <Label htmlFor="content">Content *</Label>
-              
+
               <div className="border rounded-t-md bg-gray-50 p-2 flex flex-wrap gap-1 mb-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBold}
-                  className="h-8 w-8 p-0"
-                  title="Bold (**text**)"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleBold} className="h-8 w-8 p-0" title="Bold (**text**)">
                   <Bold className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleItalic}
-                  className="h-8 w-8 p-0"
-                  title="Italic (*text*)"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleItalic} className="h-8 w-8 p-0" title="Italic (*text*)">
                   <Italic className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleUnderline}
-                  className="h-8 w-8 p-0"
-                  title="Underline (<u>text</u>)"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleUnderline} className="h-8 w-8 p-0" title="Underline (<u>text</u>)">
                   <Underline className="h-4 w-4" />
                 </Button>
                 <div className="w-px h-6 bg-gray-300 mx-1" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLink}
-                  className="h-8 w-8 p-0"
-                  title="Add Link"
-                >
-                  <Link className="h-4 w-4" />
+                <Button type="button" variant="ghost" size="sm" onClick={handleLink} className="h-8 w-8 p-0" title="Add Link">
+                  <LinkIcon className="h-4 w-4" />
                 </Button>
                 <div className="w-px h-6 bg-gray-300 mx-1" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBulletList}
-                  className="h-8 w-8 p-0"
-                  title="Bullet List"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleBulletList} className="h-8 w-8 p-0" title="Bullet List">
                   <List className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleNumberedList}
-                  className="h-8 w-8 p-0"
-                  title="Numbered List"
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleNumberedList} className="h-8 w-8 p-0" title="Numbered List">
                   <span className="text-xs font-bold">1.</span>
                 </Button>
               </div>
@@ -831,7 +762,7 @@ const BlogEditor = () => {
                 className="rounded-t-none border-t-0"
                 placeholder="Write your article content here. Use the toolbar above for formatting"
               />
-              
+
               <div className="text-xs text-gray-500 mt-2">
                 <strong>Formatting help:</strong> **bold**, *italic*, <u>underline</u>, [link text](URL), - bullet list, 1. numbered list
               </div>
@@ -840,19 +771,10 @@ const BlogEditor = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="image">Featured Image</Label>
-                <Input
-                  id="image"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                />
+                <Input id="image" type="file" accept="image/*" onChange={handleFileChange} />
                 {imagePreview && (
                   <div className="mt-2">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-32 h-32 object-cover rounded"
-                    />
+                    <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded" />
                   </div>
                 )}
               </div>
@@ -909,11 +831,7 @@ const BlogEditor = () => {
                 />
               </div>
               <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowLinkDialog(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => setShowLinkDialog(false)}>
                   Cancel
                 </Button>
                 <Button onClick={insertLink}>Insert Link</Button>
@@ -934,7 +852,7 @@ const BlogEditor = () => {
                 <div>
                   <h3 className="font-medium">{article.title}</h3>
                   <p className="text-sm text-gray-600">{article.excerpt}</p>
-                  <div className="flex gap-4 text-xs text-gray-400 mt-1">
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-400 mt-1">
                     <span>{new Date(article.published_at).toLocaleDateString()}</span>
                     <span>Slug: /{article.slug}</span>
                     {article.meta_title && <span>SEO: ✓</span>}
@@ -945,10 +863,7 @@ const BlogEditor = () => {
                   {article.tags && article.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {article.tags.slice(0, 3).map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
-                        >
+                        <span key={index} className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
                           #{tag}
                         </span>
                       ))}
@@ -959,18 +874,10 @@ const BlogEditor = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(article)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleEdit(article)}>
                     Edit
                   </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(article.id)}
-                  >
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(article.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -994,9 +901,9 @@ const BlogEditor = () => {
               <SelectValue placeholder="Select country" />
             </SelectTrigger>
             <SelectContent>
-              {countries.map((country) => (
-                <SelectItem key={country.value} value={country.value}>
-                  {country.label}
+              {countries.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1008,7 +915,7 @@ const BlogEditor = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Upload New Image
+            Upload New Image(s)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1025,24 +932,24 @@ const BlogEditor = () => {
               </div>
               <div>
                 <Label>Country *</Label>
-                <Select 
-                  value={galleryUploadForm.country} 
+                <Select
+                  value={galleryUploadForm.country}
                   onValueChange={(value) => setGalleryUploadForm({ ...galleryUploadForm, country: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select country" />
                   </SelectTrigger>
                   <SelectContent>
-                    {countries.map((country) => (
-                      <SelectItem key={country.value} value={country.value}>
-                        {country.label}
+                    {countries.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            
+
             <div>
               <Label>Description (Optional)</Label>
               <Textarea
@@ -1052,37 +959,47 @@ const BlogEditor = () => {
                 rows={3}
               />
             </div>
-            
+
             <div>
               <Label>Label (Optional)</Label>
               <Input
                 value={galleryUploadForm.label}
                 onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, label: e.target.value })}
-                placeholder="e.g., private (to hide from public)"
+                placeholder='e.g., "private" to hide from public'
               />
             </div>
 
             <div>
-              <Label>Folder (Optional)</Label>
+              <Label>Folder (Optional, REQUIRED when uploading multiple files)</Label>
               <Input
                 value={galleryUploadForm.folder}
                 onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, folder: e.target.value })}
-                placeholder="Enter folder name"
+                placeholder="Enter folder name (e.g., Events, CSR, Operations/Jan)"
               />
             </div>
 
-            <div>
-              <Label>Image File *</Label>
+            <div className="space-y-2">
+              <Label>Image File(s) *</Label>
               <Input
                 type="file"
                 accept="image/*"
-                onChange={(e) => setGalleryUploadForm({ ...galleryUploadForm, file: e.target.files?.[0] || null })}
+                multiple
+                onChange={(e) =>
+                  setGalleryUploadForm({
+                    ...galleryUploadForm,
+                    file: null, // prefer the multi-files flow
+                    files: e.target.files ? Array.from(e.target.files) : [],
+                  })
+                }
                 required
               />
+              <p className="text-xs text-gray-500">
+                You can select multiple images. If you pick more than one, please set a folder name above.
+              </p>
             </div>
-            
+
             <Button type="submit" disabled={uploadLoading} className="w-full">
-              {uploadLoading ? "Uploading..." : "Upload Image"}
+              {uploadLoading ? "Uploading..." : "Upload"}
             </Button>
           </form>
         </CardContent>
@@ -1101,7 +1018,7 @@ const BlogEditor = () => {
             </div>
           ) : galleryImages.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <ImageIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
               <p>No images found for {selectedCountry}</p>
             </div>
           ) : (
@@ -1114,23 +1031,21 @@ const BlogEditor = () => {
                     className="w-full h-48 object-cover"
                   />
                   <div className="p-4">
-                    <h3 className="font-semibold truncate">{image.title}</h3>
-                    {image.description && (
-                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">{image.description}</p>
-                    )}
-                    <div className="flex items-center justify-between mt-3">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={image.label === 'private'}
-                          onCheckedChange={() => toggleGalleryVisibility(image)}
-                        />
-                        <span className="text-sm">Hide from public</span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-semibold truncate">{image.title}</h3>
+                        {image.folder && (
+                          <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                            Folder: {image.folder}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleGalleryEdit(image)}
+                          title="Edit"
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
@@ -1139,10 +1054,28 @@ const BlogEditor = () => {
                           size="sm"
                           onClick={() => handleGalleryDelete(image)}
                           className="text-red-600 hover:text-red-700"
+                          title="Delete"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
+                    </div>
+
+                    {image.description && (
+                      <p className="text-sm text-gray-600 mt-2 line-clamp-2">{image.description}</p>
+                    )}
+
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={image.label === 'private'}
+                          onCheckedChange={() => toggleGalleryVisibility(image)}
+                        />
+                        <span className="text-sm">Hide from public</span>
+                      </div>
+                      <span className="text-xs text-gray-400">
+                        {new Date(image.created_at).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1185,11 +1118,7 @@ const BlogEditor = () => {
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setEditingImage(null)}
-                  >
+                  <Button type="button" variant="outline" onClick={() => setEditingImage(null)}>
                     Cancel
                   </Button>
                   <Button type="submit">Update</Button>
@@ -1202,22 +1131,20 @@ const BlogEditor = () => {
     </div>
   );
 
-  if (!isLoggedIn) {
-    return null; // Will redirect to login
-  }
+  if (!isLoggedIn) return null; // Will redirect to login
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
-      
+
       {/* Add padding top to account for fixed navigation */}
       <div className="pt-32">
         <div className="bg-white shadow-sm border-b">
           <div className="container mx-auto px-4 py-4">
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-bold">Blog & Gallery Editor</h1>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={handleLogout}
                 className="flex items-center gap-2"
               >
@@ -1231,7 +1158,7 @@ const BlogEditor = () => {
         <div className="container mx-auto px-4 py-8">
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Content Management</h2>
-            
+
             <div className="flex gap-4 mb-6">
               <Button
                 variant={activeView === "blog" ? "default" : "outline"}
@@ -1246,7 +1173,7 @@ const BlogEditor = () => {
                 onClick={() => handleViewChange("gallery")}
                 className="flex items-center gap-2"
               >
-                <Image className="h-4 w-4" />
+                <ImageIcon className="h-4 w-4" />
                 Gallery Editor
               </Button>
             </div>
@@ -1255,7 +1182,7 @@ const BlogEditor = () => {
           {activeView === "blog" ? renderBlogEditor() : renderGalleryEditor()}
         </div>
       </div>
-      
+
       <Footer />
     </div>
   );
