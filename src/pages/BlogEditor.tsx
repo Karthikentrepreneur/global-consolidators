@@ -238,7 +238,7 @@ const BlogEditor = () => {
   };
 
   const handleBold = () => insertTextAtCursor('**', '**');
-  ��const handleItalic = () => insertTextAtCursor('*', '*');
+  const handleItalic = () => insertTextAtCursor('*', '*');
   const handleUnderline = () => insertTextAtCursor('<u>', '</u>');
   const handleBulletList = () => insertTextAtCursor('\n- ');
   const handleNumberedList = () => insertTextAtCursor('\n1. ');
@@ -391,7 +391,7 @@ const BlogEditor = () => {
         .eq('country', selectedCountry)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+    if (error) throw error;
       setGalleryImages(data || []);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error fetching images", description: error.message });
