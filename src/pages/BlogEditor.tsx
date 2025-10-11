@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,8 +10,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
-  LogOut, Trash2, Upload, FileText, Edit, X,
-  Bold, Link as LinkIcon, Italic, Underline, List, Image as ImageIcon
+  LogOut,
+  Trash2,
+  Upload,
+  FileText,
+  Edit,
+  X,
+  Bold,
+  Link as LinkIcon,
+  Italic,
+  Underline,
+  List,
+  Image as ImageIcon,
+  Search
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -45,7 +56,24 @@ interface GalleryImage {
   updated_at: string;
 }
 
-type ActiveView = "blog" | "gallery";
+interface PageSeoSetting {
+  id: string;
+  page_key: string;
+  page_name: string;
+  created_at: string;
+  meta_title: string | null;
+  meta_description: string | null;
+  meta_keywords: string | null;
+  canonical_url: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_image_url: string | null;
+  twitter_title: string | null;
+  twitter_description: string | null;
+  updated_at: string;
+}
+
+type ActiveView = "blog" | "gallery" | "seo";
 
 const countries = [
   { value: "myanmar", label: "Myanmar" },
@@ -61,8 +89,8 @@ const slugify = (s: string) =>
 
 function slugifyFolder(input: string): string {
   // Trim slashes; allow nested folders; sanitize parts
-  let s = input.trim().replace(/^\/+|\/+$/g, "");
-  return s
+  const sanitized = input.trim().replace(/^\/+|\/+$/g, "");
+  return sanitized
     .split("/")
     .map((p) => p.toLowerCase().replace(/[^a-z0-9-_]+/g, "-").replace(/^-+|-+$/g, ""))
     .filter(Boolean)
@@ -122,6 +150,27 @@ const BlogEditor = () => {
     label: "",
   });
 
+  // ----- SEO state -----
+  const [seoPages, setSeoPages] = useState<PageSeoSetting[]>([]);
+  const [selectedSeoPageKey, setSelectedSeoPageKey] = useState<string>("");
+  const [seoListLoading, setSeoListLoading] = useState(false);
+  const [seoSaving, setSeoSaving] = useState(false);
+  const [seoDeletingKey, setSeoDeletingKey] = useState<string | null>(null);
+  const [isCreatingSeoPage, setIsCreatingSeoPage] = useState(false);
+  const [seoForm, setSeoForm] = useState({
+    pageKey: "",
+    pageName: "",
+    metaTitle: "",
+    metaDescription: "",
+    metaKeywords: "",
+    canonicalUrl: "",
+    ogTitle: "",
+    ogDescription: "",
+    ogImageUrl: "",
+    twitterTitle: "",
+    twitterDescription: "",
+  });
+
   // Link dialog state
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -145,6 +194,13 @@ const BlogEditor = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, selectedCountry, isLoggedIn]);
+
+  useEffect(() => {
+    if ((activeView === "seo" || activeView === "blog") && isLoggedIn) {
+      fetchSeoPages();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, isLoggedIn]);
 
   const handleLogout = () => {
     localStorage.removeItem("isAdminLoggedIn");
@@ -421,7 +477,7 @@ const BlogEditor = () => {
       return;
     }
 
-    let folderSafe = galleryUploadForm.folder ? slugifyFolder(galleryUploadForm.folder) : "";
+    const folderSafe = galleryUploadForm.folder ? slugifyFolder(galleryUploadForm.folder) : "";
     if (hasMultiple && !folderSafe) {
       toast({
         variant: "destructive",
@@ -571,6 +627,205 @@ const BlogEditor = () => {
       fetchGalleryImages();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Update failed", description: error.message });
+    }
+  };
+
+  const resetSeoForm = () => {
+    setSeoForm({
+      pageKey: "",
+      pageName: "",
+      metaTitle: "",
+      metaDescription: "",
+      metaKeywords: "",
+      canonicalUrl: "",
+      ogTitle: "",
+      ogDescription: "",
+      ogImageUrl: "",
+      twitterTitle: "",
+      twitterDescription: "",
+    });
+  };
+
+  const loadSeoForm = (record?: PageSeoSetting | null) => {
+    if (!record) {
+      resetSeoForm();
+      return;
+    }
+
+    setSeoForm({
+      pageKey: record.page_key,
+      pageName: record.page_name,
+      metaTitle: record.meta_title || "",
+      metaDescription: record.meta_description || "",
+      metaKeywords: record.meta_keywords || "",
+      canonicalUrl: record.canonical_url || "",
+      ogTitle: record.og_title || "",
+      ogDescription: record.og_description || "",
+      ogImageUrl: record.og_image_url || "",
+      twitterTitle: record.twitter_title || "",
+      twitterDescription: record.twitter_description || "",
+    });
+  };
+
+  const fetchSeoPages = async (preferredKey?: string) => {
+    setSeoListLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('page_seo_settings')
+        .select('*')
+        .order('page_name', { ascending: true });
+
+      if (error) throw error;
+
+      const rows = (data as PageSeoSetting[]) ?? [];
+      setSeoPages(rows);
+
+      if (rows.length > 0) {
+        const targetKey = preferredKey ?? selectedSeoPageKey;
+        const existing = rows.find((row) => row.page_key === targetKey);
+        const next = existing ?? rows[0];
+        setSelectedSeoPageKey(next.page_key);
+        loadSeoForm(next);
+        setIsCreatingSeoPage(false);
+      } else {
+        setSelectedSeoPageKey("");
+        resetSeoForm();
+        setIsCreatingSeoPage(true);
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error loading SEO pages", description: error.message });
+    } finally {
+      setSeoListLoading(false);
+    }
+  };
+
+  const handleSelectSeoPage = (key: string) => {
+    setSelectedSeoPageKey(key);
+    setIsCreatingSeoPage(false);
+    const record = seoPages.find((page) => page.page_key === key);
+    loadSeoForm(record);
+  };
+
+  const handleCreateSeoPage = () => {
+    setIsCreatingSeoPage(true);
+    setSelectedSeoPageKey("");
+    resetSeoForm();
+  };
+
+  const handleDeleteSeoPage = async (pageKey: string) => {
+    const record = seoPages.find((page) => page.page_key === pageKey);
+    if (!record) {
+      return;
+    }
+
+    const confirmation = window.confirm(
+      `Are you sure you want to delete the SEO settings for "${record.page_name}"?`
+    );
+
+    if (!confirmation) {
+      return;
+    }
+
+    setSeoDeletingKey(pageKey);
+
+    try {
+      const { error } = await supabase
+        .from('page_seo_settings')
+        .delete()
+        .eq('page_key', pageKey);
+
+      if (error) throw error;
+
+      toast({
+        title: "SEO entry deleted",
+        description: `Removed SEO metadata for ${record.page_name}`,
+      });
+
+      const remaining = seoPages.filter((page) => page.page_key !== pageKey);
+      setSeoPages(remaining);
+
+      if (remaining.length === 0) {
+        handleCreateSeoPage();
+      } else if (pageKey === selectedSeoPageKey) {
+        const nextRecord = remaining[0];
+        setSelectedSeoPageKey(nextRecord.page_key);
+        loadSeoForm(nextRecord);
+        setIsCreatingSeoPage(false);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete",
+        description: error.message,
+      });
+    } finally {
+      setSeoDeletingKey(null);
+    }
+  };
+
+  const handleSeoInputChange = (field: keyof typeof seoForm, value: string) => {
+    setSeoForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSeoReset = () => {
+    if (isCreatingSeoPage) {
+      resetSeoForm();
+    } else {
+      const record = seoPages.find((page) => page.page_key === selectedSeoPageKey);
+      loadSeoForm(record);
+    }
+  };
+
+  const handleSeoSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const pageKey = seoForm.pageKey.trim();
+    const pageName = seoForm.pageName.trim();
+
+    if (!pageKey || !pageName) {
+      toast({
+        variant: "destructive",
+        title: "Missing required fields",
+        description: "Page identifier and page name are required",
+      });
+      return;
+    }
+
+    setSeoSaving(true);
+    try {
+      const payload = {
+        page_key: pageKey,
+        page_name: pageName,
+        meta_title: seoForm.metaTitle.trim() || null,
+        meta_description: seoForm.metaDescription.trim() || null,
+        meta_keywords: seoForm.metaKeywords.trim() || null,
+        canonical_url: seoForm.canonicalUrl.trim() || null,
+        og_title: seoForm.ogTitle.trim() || null,
+        og_description: seoForm.ogDescription.trim() || null,
+        og_image_url: seoForm.ogImageUrl.trim() || null,
+        twitter_title: seoForm.twitterTitle.trim() || null,
+        twitter_description: seoForm.twitterDescription.trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('page_seo_settings')
+        .upsert(payload, { onConflict: 'page_key' });
+
+      if (error) throw error;
+
+      toast({
+        title: "SEO settings saved",
+        description: `SEO metadata saved for ${pageName}`,
+      });
+
+      setIsCreatingSeoPage(false);
+      setSelectedSeoPageKey(pageKey);
+      await fetchSeoPages(pageKey);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Failed to save", description: error.message });
+    } finally {
+      setSeoSaving(false);
     }
   };
 
@@ -776,6 +1031,16 @@ const BlogEditor = () => {
           </div>
         </CardContent>
       </Card>
+
+      <section className="space-y-4 pt-6 border-t">
+        <div>
+          <h2 className="text-2xl font-bold">SEO Settings</h2>
+          <p className="text-sm text-muted-foreground">
+            Review every page&apos;s SEO metadata and make updates below.
+          </p>
+        </div>
+        {renderSeoManager()}
+      </section>
     </div>
   );
 
@@ -1066,6 +1331,227 @@ const BlogEditor = () => {
     </div>
   );
 
+  const renderSeoManager = () => (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Page SEO Overview</CardTitle>
+            <CardDescription>Browse existing SEO entries and choose one to edit.</CardDescription>
+          </div>
+          <Button type="button" onClick={handleCreateSeoPage}>
+            + New Page
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {seoListLoading ? (
+            <p className="text-sm text-muted-foreground">Loading pages…</p>
+          ) : seoPages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No SEO records yet. Create your first page to begin.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="py-2 pr-4 font-medium">Page Name</th>
+                    <th className="py-2 pr-4 font-medium">Identifier</th>
+                    <th className="py-2 pr-4 font-medium">Updated</th>
+                    <th className="py-2 pr-4 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {seoPages.map((page) => (
+                    <tr
+                      key={page.id}
+                      className={`border-b last:border-0 ${
+                        !isCreatingSeoPage && selectedSeoPageKey === page.page_key ? 'bg-muted/60' : ''
+                      }`}
+                    >
+                      <td className="py-2 pr-4">{page.page_name}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{page.page_key}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">
+                        {new Date(page.updated_at).toLocaleString()}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSelectSeoPage(page.page_key)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            disabled={seoDeletingKey === page.page_key}
+                            onClick={() => handleDeleteSeoPage(page.page_key)}
+                          >
+                            {seoDeletingKey === page.page_key ? 'Deleting…' : 'Delete'}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{isCreatingSeoPage ? "Create SEO entry" : seoForm.pageName || "Edit SEO"}</CardTitle>
+          <CardDescription>
+            Provide metadata that will be used for search engines and social sharing.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSeoSave} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="seo-page-key">Page Identifier *</Label>
+                <Input
+                  id="seo-page-key"
+                  value={seoForm.pageKey}
+                  onChange={(e) => handleSeoInputChange('pageKey', e.target.value)}
+                  placeholder="e.g., home"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use lowercase letters, numbers, and dashes. This maps to the page slug.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="seo-page-name">Page Name *</Label>
+                <Input
+                  id="seo-page-name"
+                  value={seoForm.pageName}
+                  onChange={(e) => handleSeoInputChange('pageName', e.target.value)}
+                  placeholder="Human-readable page name"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="seo-meta-title">Meta Title</Label>
+                <Input
+                  id="seo-meta-title"
+                  value={seoForm.metaTitle}
+                  onChange={(e) => handleSeoInputChange('metaTitle', e.target.value)}
+                  maxLength={70}
+                  placeholder="Title shown in search results"
+                />
+                <p className="text-xs text-muted-foreground mt-1">{seoForm.metaTitle.length}/70 characters</p>
+              </div>
+              <div>
+                <Label htmlFor="seo-meta-keywords">Meta Keywords</Label>
+                <Input
+                  id="seo-meta-keywords"
+                  value={seoForm.metaKeywords}
+                  onChange={(e) => handleSeoInputChange('metaKeywords', e.target.value)}
+                  placeholder="Comma-separated keywords"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="seo-meta-description">Meta Description</Label>
+              <Textarea
+                id="seo-meta-description"
+                value={seoForm.metaDescription}
+                onChange={(e) => handleSeoInputChange('metaDescription', e.target.value)}
+                rows={3}
+                maxLength={160}
+                placeholder="Describe the page for search engines"
+              />
+              <p className="text-xs text-muted-foreground mt-1">{seoForm.metaDescription.length}/160 characters</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="seo-canonical-url">Canonical URL</Label>
+                <Input
+                  id="seo-canonical-url"
+                  type="url"
+                  value={seoForm.canonicalUrl}
+                  onChange={(e) => handleSeoInputChange('canonicalUrl', e.target.value)}
+                  placeholder="https://example.com/page"
+                />
+              </div>
+              <div>
+                <Label htmlFor="seo-og-image">OG Image URL</Label>
+                <Input
+                  id="seo-og-image"
+                  type="url"
+                  value={seoForm.ogImageUrl}
+                  onChange={(e) => handleSeoInputChange('ogImageUrl', e.target.value)}
+                  placeholder="https://example.com/og-image.jpg"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="seo-og-title">Open Graph Title</Label>
+                <Input
+                  id="seo-og-title"
+                  value={seoForm.ogTitle}
+                  onChange={(e) => handleSeoInputChange('ogTitle', e.target.value)}
+                  placeholder="Title for social sharing"
+                />
+              </div>
+              <div>
+                <Label htmlFor="seo-og-description">Open Graph Description</Label>
+                <Textarea
+                  id="seo-og-description"
+                  value={seoForm.ogDescription}
+                  onChange={(e) => handleSeoInputChange('ogDescription', e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="seo-twitter-title">Twitter Title</Label>
+                <Input
+                  id="seo-twitter-title"
+                  value={seoForm.twitterTitle}
+                  onChange={(e) => handleSeoInputChange('twitterTitle', e.target.value)}
+                  placeholder="Title for Twitter cards"
+                />
+              </div>
+              <div>
+                <Label htmlFor="seo-twitter-description">Twitter Description</Label>
+                <Textarea
+                  id="seo-twitter-description"
+                  value={seoForm.twitterDescription}
+                  onChange={(e) => handleSeoInputChange('twitterDescription', e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={handleSeoReset} disabled={seoSaving}>
+                Reset
+              </Button>
+              <Button type="submit" disabled={seoSaving}>
+                {seoSaving ? 'Saving…' : 'Save SEO'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   if (!isLoggedIn) {
     return null; // Will redirect to login
   }
@@ -1079,7 +1565,7 @@ const BlogEditor = () => {
         <div className="bg-white shadow-sm border-b">
           <div className="container mx-auto px-4 py-4">
             <div className="flex justify-between items-center">
-              <h1 className="text-2xl font-bold">Blog & Gallery Editor</h1>
+              <h1 className="text-2xl font-bold">Blog, Gallery & SEO Manager</h1>
               <Button
                 variant="outline"
                 onClick={handleLogout}
@@ -1096,7 +1582,7 @@ const BlogEditor = () => {
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Content Management</h2>
 
-            <div className="flex gap-4 mb-6">
+            <div className="flex gap-4 mb-6 flex-wrap">
               <Button
                 variant={activeView === "blog" ? "default" : "outline"}
                 onClick={() => handleViewChange("blog")}
@@ -1113,10 +1599,20 @@ const BlogEditor = () => {
                 <ImageIcon className="h-4 w-4" />
                 Gallery Editor
               </Button>
+              <Button
+                variant={activeView === "seo" ? "default" : "outline"}
+                onClick={() => handleViewChange("seo")}
+                className="flex items-center gap-2"
+              >
+                <Search className="h-4 w-4" />
+                SEO Manager
+              </Button>
             </div>
           </div>
 
-          {activeView === "blog" ? renderBlogEditor() : renderGalleryEditor()}
+          {activeView === "blog" && renderBlogEditor()}
+          {activeView === "gallery" && renderGalleryEditor()}
+          {activeView === "seo" && renderSeoManager()}
         </div>
       </div>
 
