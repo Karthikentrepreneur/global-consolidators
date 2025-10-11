@@ -18,11 +18,12 @@ const SystemSettings = () => {
       </div>
 
       <Tabs defaultValue="general">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="seo">SEO</TabsTrigger>
         </TabsList>
         
         <TabsContent value="general" className="space-y-4 mt-4">
@@ -433,6 +434,144 @@ const SystemSettings = () => {
                   </div>
                 </div>
                 <Badge variant="default">Connected</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="seo" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Page Selection</CardTitle>
+              <CardDescription>Choose which page SEO settings you want to edit</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="seo-page">Page</Label>
+                <Select defaultValue="home">
+                  <SelectTrigger id="seo-page">
+                    <SelectValue placeholder="Select a page" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="home">Home</SelectItem>
+                    <SelectItem value="about">About Us</SelectItem>
+                    <SelectItem value="services">Services</SelectItem>
+                    <SelectItem value="projects">Projects</SelectItem>
+                    <SelectItem value="blog">Blog</SelectItem>
+                    <SelectItem value="contact">Contact</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-locale">Locale</Label>
+                <Select defaultValue="en">
+                  <SelectTrigger id="seo-locale">
+                    <SelectValue placeholder="Select locale" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="bn">Bangla</SelectItem>
+                    <SelectItem value="si">Sinhala</SelectItem>
+                    <SelectItem value="my">Burmese</SelectItem>
+                    <SelectItem value="ur">Urdu</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Meta Tags</CardTitle>
+              <CardDescription>Update how this page appears in search engine results</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="seo-title">Meta Title</Label>
+                <Input
+                  id="seo-title"
+                  placeholder="Enter a concise, keyword-rich title"
+                  defaultValue="AuraCargo | Seamless Global Logistics Solutions"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="seo-description">Meta Description</Label>
+                <Textarea
+                  id="seo-description"
+                  placeholder="Summarize the page content in 150-160 characters"
+                  defaultValue="AuraCargo delivers end-to-end freight forwarding, customs clearance, and warehousing services across South Asia."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-keywords">Target Keywords</Label>
+                <Input
+                  id="seo-keywords"
+                  placeholder="Enter comma-separated keywords"
+                  defaultValue="global logistics, freight forwarding, AuraCargo"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-slug">URL Slug</Label>
+                <Input id="seo-slug" placeholder="Enter the page slug" defaultValue="global-logistics" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-canonical">Canonical URL</Label>
+                <Input id="seo-canonical" placeholder="https://auracargo.com/page" defaultValue="https://auracargo.com" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-schema">Schema Type</Label>
+                <Select defaultValue="corporation">
+                  <SelectTrigger id="seo-schema">
+                    <SelectValue placeholder="Select schema type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="corporation">Corporation</SelectItem>
+                    <SelectItem value="service">Service</SelectItem>
+                    <SelectItem value="product">Product</SelectItem>
+                    <SelectItem value="article">Article</SelectItem>
+                    <SelectItem value="faq">FAQ Page</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Social Sharing</CardTitle>
+              <CardDescription>Control how the page looks when shared on social platforms</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="seo-og-title">Open Graph Title</Label>
+                <Input
+                  id="seo-og-title"
+                  placeholder="Title shown when shared on social media"
+                  defaultValue="AuraCargo – Logistics experts connecting South Asia to the world"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="seo-og-description">Open Graph Description</Label>
+                <Textarea
+                  id="seo-og-description"
+                  placeholder="Description for social media cards"
+                  defaultValue="Discover AuraCargo's tailored logistics network covering Bangladesh, Sri Lanka, Myanmar, and Pakistan."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-og-image">Social Share Image URL</Label>
+                <Input
+                  id="seo-og-image"
+                  placeholder="https://auracargo.com/images/social-card.png"
+                  defaultValue="https://auracargo.com/images/social-card.png"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="seo-twitter-handle">Twitter Handle</Label>
+                <Input id="seo-twitter-handle" placeholder="@auracargo" defaultValue="@auracargo" />
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <Button>Save SEO Settings</Button>
               </div>
             </CardContent>
           </Card>
