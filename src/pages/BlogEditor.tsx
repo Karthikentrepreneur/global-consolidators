@@ -155,6 +155,7 @@ const BlogEditor = () => {
   const [selectedSeoPageKey, setSelectedSeoPageKey] = useState<string>("");
   const [seoListLoading, setSeoListLoading] = useState(false);
   const [seoSaving, setSeoSaving] = useState(false);
+  const [seoDeletingKey, setSeoDeletingKey] = useState<string | null>(null);
   const [isCreatingSeoPage, setIsCreatingSeoPage] = useState(false);
   const [seoForm, setSeoForm] = useState({
     pageKey: "",
@@ -195,7 +196,7 @@ const BlogEditor = () => {
   }, [activeView, selectedCountry, isLoggedIn]);
 
   useEffect(() => {
-    if (activeView === "seo" && isLoggedIn) {
+    if ((activeView === "seo" || activeView === "blog") && isLoggedIn) {
       fetchSeoPages();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -711,6 +712,57 @@ const BlogEditor = () => {
     resetSeoForm();
   };
 
+  const handleDeleteSeoPage = async (pageKey: string) => {
+    const record = seoPages.find((page) => page.page_key === pageKey);
+    if (!record) {
+      return;
+    }
+
+    const confirmation = window.confirm(
+      `Are you sure you want to delete the SEO settings for "${record.page_name}"?`
+    );
+
+    if (!confirmation) {
+      return;
+    }
+
+    setSeoDeletingKey(pageKey);
+
+    try {
+      const { error } = await supabase
+        .from('page_seo_settings')
+        .delete()
+        .eq('page_key', pageKey);
+
+      if (error) throw error;
+
+      toast({
+        title: "SEO entry deleted",
+        description: `Removed SEO metadata for ${record.page_name}`,
+      });
+
+      const remaining = seoPages.filter((page) => page.page_key !== pageKey);
+      setSeoPages(remaining);
+
+      if (remaining.length === 0) {
+        handleCreateSeoPage();
+      } else if (pageKey === selectedSeoPageKey) {
+        const nextRecord = remaining[0];
+        setSelectedSeoPageKey(nextRecord.page_key);
+        loadSeoForm(nextRecord);
+        setIsCreatingSeoPage(false);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to delete",
+        description: error.message,
+      });
+    } finally {
+      setSeoDeletingKey(null);
+    }
+  };
+
   const handleSeoInputChange = (field: keyof typeof seoForm, value: string) => {
     setSeoForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -979,6 +1031,16 @@ const BlogEditor = () => {
           </div>
         </CardContent>
       </Card>
+
+      <section className="space-y-4 pt-6 border-t">
+        <div>
+          <h2 className="text-2xl font-bold">SEO Settings</h2>
+          <p className="text-sm text-muted-foreground">
+            Review every page&apos;s SEO metadata and make updates below.
+          </p>
+        </div>
+        {renderSeoManager()}
+      </section>
     </div>
   );
 
@@ -1270,22 +1332,18 @@ const BlogEditor = () => {
   );
 
   const renderSeoManager = () => (
-    <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-      <Card className="h-fit">
-        <CardHeader>
-          <CardTitle>Pages</CardTitle>
-          <CardDescription>Select a page to edit SEO metadata</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button
-            type="button"
-            variant={isCreatingSeoPage ? "default" : "outline"}
-            className="w-full justify-start"
-            onClick={handleCreateSeoPage}
-          >
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Page SEO Overview</CardTitle>
+            <CardDescription>Browse existing SEO entries and choose one to edit.</CardDescription>
+          </div>
+          <Button type="button" onClick={handleCreateSeoPage}>
             + New Page
           </Button>
-
+        </CardHeader>
+        <CardContent>
           {seoListLoading ? (
             <p className="text-sm text-muted-foreground">Loading pages…</p>
           ) : seoPages.length === 0 ? (
@@ -1293,30 +1351,60 @@ const BlogEditor = () => {
               No SEO records yet. Create your first page to begin.
             </p>
           ) : (
-            <div className="space-y-2">
-              {seoPages.map((page) => (
-                <Button
-                  key={page.id}
-                  type="button"
-                  variant={!isCreatingSeoPage && selectedSeoPageKey === page.page_key ? "default" : "outline"}
-                  className="w-full justify-between"
-                  onClick={() => handleSelectSeoPage(page.page_key)}
-                >
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">{page.page_name}</span>
-                    <span className="text-xs text-muted-foreground">{page.page_key}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(page.updated_at).toLocaleDateString()}
-                  </span>
-                </Button>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="py-2 pr-4 font-medium">Page Name</th>
+                    <th className="py-2 pr-4 font-medium">Identifier</th>
+                    <th className="py-2 pr-4 font-medium">Updated</th>
+                    <th className="py-2 pr-4 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {seoPages.map((page) => (
+                    <tr
+                      key={page.id}
+                      className={`border-b last:border-0 ${
+                        !isCreatingSeoPage && selectedSeoPageKey === page.page_key ? 'bg-muted/60' : ''
+                      }`}
+                    >
+                      <td className="py-2 pr-4">{page.page_name}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{page.page_key}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">
+                        {new Date(page.updated_at).toLocaleString()}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSelectSeoPage(page.page_key)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            disabled={seoDeletingKey === page.page_key}
+                            onClick={() => handleDeleteSeoPage(page.page_key)}
+                          >
+                            {seoDeletingKey === page.page_key ? 'Deleting…' : 'Delete'}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-1">
+      <Card>
         <CardHeader>
           <CardTitle>{isCreatingSeoPage ? "Create SEO entry" : seoForm.pageName || "Edit SEO"}</CardTitle>
           <CardDescription>
@@ -1357,7 +1445,7 @@ const BlogEditor = () => {
                   value={seoForm.metaTitle}
                   onChange={(e) => handleSeoInputChange('metaTitle', e.target.value)}
                   maxLength={70}
-                  placeholder="Up to 70 characters"
+                  placeholder="Title shown in search results"
                 />
                 <p className="text-xs text-muted-foreground mt-1">{seoForm.metaTitle.length}/70 characters</p>
               </div>
@@ -1367,7 +1455,7 @@ const BlogEditor = () => {
                   id="seo-meta-keywords"
                   value={seoForm.metaKeywords}
                   onChange={(e) => handleSeoInputChange('metaKeywords', e.target.value)}
-                  placeholder="keyword1, keyword2"
+                  placeholder="Comma-separated keywords"
                 />
               </div>
             </div>
