@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -8,8 +8,234 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
+
+type PageSeoSetting = Database["public"]["Tables"]["page_seo_settings"]["Row"];
+
+type SeoFormState = {
+  pageKey: string;
+  pageName: string;
+  metaTitle: string;
+  metaDescription: string;
+  metaKeywords: string;
+  canonicalUrl: string;
+  ogTitle: string;
+  ogDescription: string;
+  ogImageUrl: string;
+  twitterTitle: string;
+  twitterDescription: string;
+};
+
+const createEmptySeoForm = (): SeoFormState => ({
+  pageKey: "",
+  pageName: "",
+  metaTitle: "",
+  metaDescription: "",
+  metaKeywords: "",
+  canonicalUrl: "",
+  ogTitle: "",
+  ogDescription: "",
+  ogImageUrl: "",
+  twitterTitle: "",
+  twitterDescription: "",
+});
+
+const formatUpdatedAt = (value: string) => {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+};
 
 const SystemSettings = () => {
+  const { toast } = useToast();
+
+  const [seoRecords, setSeoRecords] = useState<PageSeoSetting[]>([]);
+  const [selectedSeoPageKey, setSelectedSeoPageKey] = useState<string | null>(null);
+  const [isCreatingSeoPage, setIsCreatingSeoPage] = useState(false);
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [seoSaving, setSeoSaving] = useState(false);
+  const [seoForm, setSeoForm] = useState<SeoFormState>(() => createEmptySeoForm());
+
+  const selectedSeoRecord = useMemo(() => {
+    if (!selectedSeoPageKey) return null;
+    return seoRecords.find((record) => record.page_key === selectedSeoPageKey) ?? null;
+  }, [seoRecords, selectedSeoPageKey]);
+
+  const loadFormFromRecord = useCallback((record: PageSeoSetting | null) => {
+    if (!record) {
+      setSeoForm(createEmptySeoForm());
+      return;
+    }
+
+    setSeoForm({
+      pageKey: record.page_key,
+      pageName: record.page_name,
+      metaTitle: record.meta_title ?? "",
+      metaDescription: record.meta_description ?? "",
+      metaKeywords: record.meta_keywords ?? "",
+      canonicalUrl: record.canonical_url ?? "",
+      ogTitle: record.og_title ?? "",
+      ogDescription: record.og_description ?? "",
+      ogImageUrl: record.og_image_url ?? "",
+      twitterTitle: record.twitter_title ?? "",
+      twitterDescription: record.twitter_description ?? "",
+    });
+  }, []);
+
+  const fetchSeoPages = useCallback(
+    async (preferredKey?: string) => {
+      setSeoLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("page_seo_settings")
+          .select("*")
+          .order("page_name", { ascending: true });
+
+        if (error) throw error;
+
+        const rows = (data as PageSeoSetting[]) ?? [];
+        setSeoRecords(rows);
+
+        if (rows.length === 0) {
+          setIsCreatingSeoPage(true);
+          setSelectedSeoPageKey(null);
+          setSeoForm(createEmptySeoForm());
+          return;
+        }
+
+        const targetKey = preferredKey ?? selectedSeoPageKey ?? rows[0].page_key;
+        const nextRecord = rows.find((row) => row.page_key === targetKey) ?? rows[0];
+
+        setIsCreatingSeoPage(false);
+        setSelectedSeoPageKey((prev) => (prev === nextRecord.page_key ? prev : nextRecord.page_key));
+        loadFormFromRecord(nextRecord);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast({
+          variant: "destructive",
+          title: "Unable to load SEO settings",
+          description: message || "An unexpected error occurred while loading SEO settings.",
+        });
+      } finally {
+        setSeoLoading(false);
+      }
+    },
+    [loadFormFromRecord, selectedSeoPageKey, toast]
+  );
+
+  useEffect(() => {
+    fetchSeoPages();
+  }, [fetchSeoPages]);
+
+  const handleSelectSeoPage = (pageKey: string) => {
+    setSelectedSeoPageKey(pageKey);
+    setIsCreatingSeoPage(false);
+
+    const record = seoRecords.find((item) => item.page_key === pageKey) ?? null;
+    loadFormFromRecord(record);
+  };
+
+  const handleCreateSeoPage = () => {
+    setIsCreatingSeoPage(true);
+    setSelectedSeoPageKey(null);
+    setSeoForm(createEmptySeoForm());
+  };
+
+  const handleSeoInputChange = (field: keyof SeoFormState, value: string) => {
+    setSeoForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSeoReset = () => {
+    if (isCreatingSeoPage) {
+      setSeoForm(createEmptySeoForm());
+      return;
+    }
+
+    loadFormFromRecord(selectedSeoRecord);
+  };
+
+  const handleSeoCancelCreate = () => {
+    if (seoRecords.length === 0) {
+      setSeoForm(createEmptySeoForm());
+      return;
+    }
+
+    const fallbackRecord = selectedSeoRecord ?? seoRecords[0];
+    setIsCreatingSeoPage(false);
+    setSelectedSeoPageKey(fallbackRecord.page_key);
+    loadFormFromRecord(fallbackRecord);
+  };
+
+  const handleSeoSave = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const pageKey = seoForm.pageKey.trim();
+    const pageName = seoForm.pageName.trim();
+
+    if (!pageKey || !pageName) {
+      toast({
+        variant: "destructive",
+        title: "Missing required fields",
+        description: "Page identifier and page name are required to save SEO settings.",
+      });
+      return;
+    }
+
+    setSeoSaving(true);
+    try {
+      const payload = {
+        page_key: pageKey,
+        page_name: pageName,
+        meta_title: seoForm.metaTitle.trim() || null,
+        meta_description: seoForm.metaDescription.trim() || null,
+        meta_keywords: seoForm.metaKeywords.trim() || null,
+        canonical_url: seoForm.canonicalUrl.trim() || null,
+        og_title: seoForm.ogTitle.trim() || null,
+        og_description: seoForm.ogDescription.trim() || null,
+        og_image_url: seoForm.ogImageUrl.trim() || null,
+        twitter_title: seoForm.twitterTitle.trim() || null,
+        twitter_description: seoForm.twitterDescription.trim() || null,
+        updated_at: new Date().toISOString(),
+      } satisfies Database["public"]["Tables"]["page_seo_settings"]["Insert"];
+
+      const { error } = await supabase
+        .from("page_seo_settings")
+        .upsert(payload, { onConflict: "page_key" });
+
+      if (error) throw error;
+
+      toast({
+        title: "SEO settings saved",
+        description: `SEO metadata for "${pageName}" has been saved successfully.`,
+      });
+
+      setIsCreatingSeoPage(false);
+      setSelectedSeoPageKey(pageKey);
+      await fetchSeoPages(pageKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        variant: "destructive",
+        title: "Unable to save SEO settings",
+        description: message || "An unexpected error occurred while saving SEO settings.",
+      });
+    } finally {
+      setSeoSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -439,142 +665,264 @@ const SystemSettings = () => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="seo" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Page Selection</CardTitle>
-              <CardDescription>Choose which page SEO settings you want to edit</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="seo-page">Page</Label>
-                <Select defaultValue="home">
-                  <SelectTrigger id="seo-page">
-                    <SelectValue placeholder="Select a page" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="home">Home</SelectItem>
-                    <SelectItem value="about">About Us</SelectItem>
-                    <SelectItem value="services">Services</SelectItem>
-                    <SelectItem value="projects">Projects</SelectItem>
-                    <SelectItem value="blog">Blog</SelectItem>
-                    <SelectItem value="contact">Contact</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-locale">Locale</Label>
-                <Select defaultValue="en">
-                  <SelectTrigger id="seo-locale">
-                    <SelectValue placeholder="Select locale" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="bn">Bangla</SelectItem>
-                    <SelectItem value="si">Sinhala</SelectItem>
-                    <SelectItem value="my">Burmese</SelectItem>
-                    <SelectItem value="ur">Urdu</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+        <TabsContent value="seo" className="mt-4">
+          <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+            <Card className="lg:col-span-1">
+              <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Page SEO Overview</CardTitle>
+                  <CardDescription>Review all page SEO entries and pick one to edit.</CardDescription>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button size="sm" variant="outline" onClick={() => fetchSeoPages(selectedSeoPageKey ?? undefined)} disabled={seoLoading}>
+                    {seoLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    Refresh
+                  </Button>
+                  <Button size="sm" onClick={handleCreateSeoPage} variant={isCreatingSeoPage ? "default" : "secondary"}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New page
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Badge variant="secondary">{seoRecords.length} pages</Badge>
+                  {!isCreatingSeoPage && selectedSeoRecord && (
+                    <span className="text-xs text-muted-foreground">
+                      Editing {selectedSeoRecord.page_name}
+                    </span>
+                  )}
+                </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Meta Tags</CardTitle>
-              <CardDescription>Update how this page appears in search engine results</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="seo-title">Meta Title</Label>
-                <Input
-                  id="seo-title"
-                  placeholder="Enter a concise, keyword-rich title"
-                  defaultValue="AuraCargo | Seamless Global Logistics Solutions"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="seo-description">Meta Description</Label>
-                <Textarea
-                  id="seo-description"
-                  placeholder="Summarize the page content in 150-160 characters"
-                  defaultValue="AuraCargo delivers end-to-end freight forwarding, customs clearance, and warehousing services across South Asia."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-keywords">Target Keywords</Label>
-                <Input
-                  id="seo-keywords"
-                  placeholder="Enter comma-separated keywords"
-                  defaultValue="global logistics, freight forwarding, AuraCargo"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-slug">URL Slug</Label>
-                <Input id="seo-slug" placeholder="Enter the page slug" defaultValue="global-logistics" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-canonical">Canonical URL</Label>
-                <Input id="seo-canonical" placeholder="https://auracargo.com/page" defaultValue="https://auracargo.com" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-schema">Schema Type</Label>
-                <Select defaultValue="corporation">
-                  <SelectTrigger id="seo-schema">
-                    <SelectValue placeholder="Select schema type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="corporation">Corporation</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
-                    <SelectItem value="product">Product</SelectItem>
-                    <SelectItem value="article">Article</SelectItem>
-                    <SelectItem value="faq">FAQ Page</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+                {seoLoading ? (
+                  <div className="flex h-32 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Loading page SEO…
+                  </div>
+                ) : seoRecords.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No SEO records yet. Create your first page entry to get started.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Page</TableHead>
+                        <TableHead>Meta title</TableHead>
+                        <TableHead>Last updated</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {seoRecords.map((record) => (
+                        <TableRow
+                          key={record.id}
+                          data-state={selectedSeoPageKey === record.page_key ? "selected" : undefined}
+                          className="cursor-pointer"
+                          onClick={() => handleSelectSeoPage(record.page_key)}
+                        >
+                          <TableCell>
+                            <div className="font-medium">{record.page_name}</div>
+                            <div className="text-xs text-muted-foreground">{record.page_key}</div>
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {record.meta_title ?? "—"}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {formatUpdatedAt(record.updated_at)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleSelectSeoPage(record.page_key);
+                              }}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Social Sharing</CardTitle>
-              <CardDescription>Control how the page looks when shared on social platforms</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="seo-og-title">Open Graph Title</Label>
-                <Input
-                  id="seo-og-title"
-                  placeholder="Title shown when shared on social media"
-                  defaultValue="AuraCargo – Logistics experts connecting South Asia to the world"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="seo-og-description">Open Graph Description</Label>
-                <Textarea
-                  id="seo-og-description"
-                  placeholder="Description for social media cards"
-                  defaultValue="Discover AuraCargo's tailored logistics network covering Bangladesh, Sri Lanka, Myanmar, and Pakistan."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-og-image">Social Share Image URL</Label>
-                <Input
-                  id="seo-og-image"
-                  placeholder="https://auracargo.com/images/social-card.png"
-                  defaultValue="https://auracargo.com/images/social-card.png"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo-twitter-handle">Twitter Handle</Label>
-                <Input id="seo-twitter-handle" placeholder="@auracargo" defaultValue="@auracargo" />
-              </div>
-              <div className="md:col-span-2 flex justify-end">
-                <Button>Save SEO Settings</Button>
-              </div>
-            </CardContent>
-          </Card>
+            <Card className="lg:col-span-1">
+              <CardHeader className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle>
+                    {isCreatingSeoPage
+                      ? "Create SEO entry"
+                      : selectedSeoRecord?.page_name
+                      ? `Edit ${selectedSeoRecord.page_name}`
+                      : "Select a page to edit"}
+                  </CardTitle>
+                  <Badge variant="outline">{isCreatingSeoPage ? "New" : "Editing"}</Badge>
+                </div>
+                <CardDescription>
+                  {isCreatingSeoPage
+                    ? "Provide metadata for a new page so it can be discovered by search engines."
+                    : selectedSeoRecord
+                    ? `Update search and social metadata for "${selectedSeoRecord.page_name}".`
+                    : "Pick a page on the left to review and update its SEO metadata."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSeoSave} className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="seo-page-key">Page identifier *</Label>
+                      <Input
+                        id="seo-page-key"
+                        value={seoForm.pageKey}
+                        onChange={(event) => handleSeoInputChange("pageKey", event.target.value)}
+                        placeholder="e.g., home"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Use lowercase letters, numbers, and dashes. This maps to the page slug.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="seo-page-name">Page name *</Label>
+                      <Input
+                        id="seo-page-name"
+                        value={seoForm.pageName}
+                        onChange={(event) => handleSeoInputChange("pageName", event.target.value)}
+                        placeholder="Human-friendly page name"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="seo-meta-title">Meta title</Label>
+                      <Input
+                        id="seo-meta-title"
+                        value={seoForm.metaTitle}
+                        onChange={(event) => handleSeoInputChange("metaTitle", event.target.value)}
+                        maxLength={70}
+                        placeholder="Up to 70 characters"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">{seoForm.metaTitle.length}/70 characters</p>
+                    </div>
+                    <div>
+                      <Label htmlFor="seo-meta-keywords">Meta keywords</Label>
+                      <Input
+                        id="seo-meta-keywords"
+                        value={seoForm.metaKeywords}
+                        onChange={(event) => handleSeoInputChange("metaKeywords", event.target.value)}
+                        placeholder="keyword1, keyword2"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="seo-meta-description">Meta description</Label>
+                    <Textarea
+                      id="seo-meta-description"
+                      value={seoForm.metaDescription}
+                      onChange={(event) => handleSeoInputChange("metaDescription", event.target.value)}
+                      rows={3}
+                      maxLength={160}
+                      placeholder="Describe the page for search engines"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">{seoForm.metaDescription.length}/160 characters</p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="seo-canonical-url">Canonical URL</Label>
+                      <Input
+                        id="seo-canonical-url"
+                        type="url"
+                        value={seoForm.canonicalUrl}
+                        onChange={(event) => handleSeoInputChange("canonicalUrl", event.target.value)}
+                        placeholder="https://example.com/page"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="seo-og-image">OG image URL</Label>
+                      <Input
+                        id="seo-og-image"
+                        type="url"
+                        value={seoForm.ogImageUrl}
+                        onChange={(event) => handleSeoInputChange("ogImageUrl", event.target.value)}
+                        placeholder="https://example.com/og-image.jpg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="seo-og-title">Open Graph title</Label>
+                      <Input
+                        id="seo-og-title"
+                        value={seoForm.ogTitle}
+                        onChange={(event) => handleSeoInputChange("ogTitle", event.target.value)}
+                        placeholder="Title for social sharing"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="seo-og-description">Open Graph description</Label>
+                      <Textarea
+                        id="seo-og-description"
+                        value={seoForm.ogDescription}
+                        onChange={(event) => handleSeoInputChange("ogDescription", event.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="seo-twitter-title">Twitter title</Label>
+                      <Input
+                        id="seo-twitter-title"
+                        value={seoForm.twitterTitle}
+                        onChange={(event) => handleSeoInputChange("twitterTitle", event.target.value)}
+                        placeholder="Title for Twitter cards"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="seo-twitter-description">Twitter description</Label>
+                      <Textarea
+                        id="seo-twitter-description"
+                        value={seoForm.twitterDescription}
+                        onChange={(event) => handleSeoInputChange("twitterDescription", event.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {isCreatingSeoPage && seoRecords.length > 0 && (
+                      <Button type="button" variant="ghost" onClick={handleSeoCancelCreate} disabled={seoSaving}>
+                        Cancel
+                      </Button>
+                    )}
+                    <Button type="button" variant="outline" onClick={handleSeoReset} disabled={seoSaving}>
+                      Reset
+                    </Button>
+                    <Button type="submit" disabled={seoSaving}>
+                      {seoSaving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        "Save SEO"
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
       
