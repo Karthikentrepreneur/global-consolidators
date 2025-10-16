@@ -47,7 +47,7 @@ const CustomsClearance = () => {
             delay: 0.2
           }} className="relative">
               <div className="rounded-2xl overflow-hidden shadow-2xl">
-                <img src="/customclearance.png" alt="Customs Clearance Services" className="w-full h-96 object-cover" />
+                <img src="/customclearance.png" alt="Customs Clearance Services" className="w-full h-96 object-cover mx-auto" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
               </div>
             </motion.div>

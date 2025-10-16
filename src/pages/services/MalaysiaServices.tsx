@@ -29,7 +29,7 @@ const ServiceCard = ({ title, description, icon: Icon, image, link }) => {
         <img
           src={image}
           alt={title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="w-full h-full object-cover mx-auto transition-transform duration-500 group-hover:scale-105"
         />
       </div>
       <div className="p-6 flex flex-col justify-center bg-gray-200">

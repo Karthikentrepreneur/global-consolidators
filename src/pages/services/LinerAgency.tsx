@@ -42,7 +42,7 @@ const LinerAgency = () => {
               className="relative"
             >
               <div className="rounded-2xl overflow-hidden shadow-2xl">
-                <img src="/linearagency.png" alt="Liner Agency" className="w-full h-96 object-cover" />
+                <img src="/linearagency.png" alt="Liner Agency" className="w-full h-96 object-cover mx-auto" />
               </div>
             </motion.div>
 

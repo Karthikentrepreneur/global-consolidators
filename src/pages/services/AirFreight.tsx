@@ -71,7 +71,7 @@ const AirFreight = () => {
             delay: 0.2
           }} className="relative">
               <div className="rounded-2xl overflow-hidden shadow-2xl">
-                <img src="/airfreight.png" alt="Air Freight Services" className="w-full h-96 object-cover" />
+                <img src="/airfreight.png" alt="Air Freight Services" className="w-full h-96 object-cover mx-auto" />
               </div>
             </motion.div>
 
