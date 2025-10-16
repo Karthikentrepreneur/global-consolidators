@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -196,7 +197,7 @@ const BlogEditor = () => {
   }, [activeView, selectedCountry, isLoggedIn]);
 
   useEffect(() => {
-    if ((activeView === "seo" || activeView === "blog") && isLoggedIn) {
+    if (activeView === "seo" && isLoggedIn) {
       fetchSeoPages();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1579,40 +1580,38 @@ const BlogEditor = () => {
         </div>
 
         <div className="container mx-auto px-4 py-8">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">Content Management</h2>
+          <h2 className="text-2xl font-bold mb-6">Content Management</h2>
 
-            <div className="flex gap-4 mb-6 flex-wrap">
-              <Button
-                variant={activeView === "blog" ? "default" : "outline"}
-                onClick={() => handleViewChange("blog")}
-                className="flex items-center gap-2"
-              >
+          <Tabs
+            value={activeView}
+            onValueChange={(value) => handleViewChange(value as ActiveView)}
+            className="space-y-6"
+          >
+            <TabsList className="flex flex-wrap gap-2">
+              <TabsTrigger value="blog" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Blog Editor
-              </Button>
-              <Button
-                variant={activeView === "gallery" ? "default" : "outline"}
-                onClick={() => handleViewChange("gallery")}
-                className="flex items-center gap-2"
-              >
+              </TabsTrigger>
+              <TabsTrigger value="gallery" className="flex items-center gap-2">
                 <ImageIcon className="h-4 w-4" />
                 Gallery Editor
-              </Button>
-              <Button
-                variant={activeView === "seo" ? "default" : "outline"}
-                onClick={() => handleViewChange("seo")}
-                className="flex items-center gap-2"
-              >
+              </TabsTrigger>
+              <TabsTrigger value="seo" className="flex items-center gap-2">
                 <Search className="h-4 w-4" />
                 SEO Manager
-              </Button>
-            </div>
-          </div>
+              </TabsTrigger>
+            </TabsList>
 
-          {activeView === "blog" && renderBlogEditor()}
-          {activeView === "gallery" && renderGalleryEditor()}
-          {activeView === "seo" && renderSeoManager()}
+            <TabsContent value="blog" className="space-y-6">
+              {renderBlogEditor()}
+            </TabsContent>
+            <TabsContent value="gallery" className="space-y-6">
+              {renderGalleryEditor()}
+            </TabsContent>
+            <TabsContent value="seo" className="space-y-6">
+              {renderSeoManager()}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
